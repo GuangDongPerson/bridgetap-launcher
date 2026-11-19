@@ -57,11 +57,11 @@ So:
 
 Maintained at [GuangDongPerson/bridgetap-launcher](https://github.com/GuangDongPerson/bridgetap-launcher). Thanks to the project [bridgetap](https://github.com/sgggnnn/bridgetap).
 
-BridgeTap  launcher uses Electron, ASM, MiSans, libraries are included in the JARs under `META-INF/licenses/`.
+BridgeTap  launcher uses Electron, ASM, MiSans, the licenses see [licenses/](/main/licenses/).
 
 ## License
 
-The application itself: GPL-3.0, see `LICENSE`.
+The application itself: GPL-3.0, see [LICENSE](LICENSE).
 
 Third-party components shipped with the artifacts (Electron, ASM, MiSans) and their license texts are listed in `THIRD-PARTY.md` at the repository root; the full texts live in `licenses/`.
 
