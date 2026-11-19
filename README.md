@@ -57,8 +57,6 @@ So:
 
 Maintained at [GuangDongPerson/bridgetap-launcher](https://github.com/GuangDongPerson/bridgetap-launcher). Thanks to the project [bridgetap](https://github.com/sgggnnn/bridgetap).
 
-BridgeTap  launcher uses Electron, ASM, MiSans, the licenses see [licenses/](/main/licenses/).
-
 ## License
 
 The application itself: GPL-3.0, see [LICENSE](LICENSE).
