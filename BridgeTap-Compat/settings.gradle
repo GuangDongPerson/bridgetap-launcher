@@ -1,0 +1,9 @@
+rootProject.name = "BridgeTap-Compat"
+
+include "boot"
+include "core"
+include "hud"
+include "agent"
+include "tools"
+include "harness"
+include "injector"

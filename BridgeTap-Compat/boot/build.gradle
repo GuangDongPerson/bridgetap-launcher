@@ -1,0 +1,6 @@
+// Bootstrapped into the JVM's bootstrap loader so that a hook injected into a game class can be
+// resolved no matter which (custom, child-first) classloader the client used for its own code.
+// Only java.base may be referenced here.
+jar {
+	archiveBaseName = "bridgetap-boot"
+}

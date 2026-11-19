@@ -1,0 +1,2 @@
+# The packaged agent exe is copied here by native/pack.sh; see README "Build".
+# 打包用的 agent exe 由 native/pack.sh 放到这里，见 README 的「构建」一节。

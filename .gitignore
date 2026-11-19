@@ -1,0 +1,133 @@
+# ---------------------------------------------------------------------------
+# BridgeTap — ignore rules (English version)
+# The complete Chinese version follows below, after two blank lines.
+# ---------------------------------------------------------------------------
+
+# Runtime dependencies
+node_modules/
+
+# Electron build output, installers and intermediate packages
+BridgeTap-Launcher/dist/
+BridgeTap-Launcher/release/
+dist/
+release/
+
+# Gradle / Java build output.
+# BridgeTap-Launcher/build/ is NOT ignored on purpose: it holds icon.ico and
+# icon.png, which electron-builder needs at packaging time.
+BridgeTap-Compat/build/
+BridgeTap-Compat/*/build/
+BridgeTap-Compat/.gradle/
+
+# Binaries that native/pack.sh rebuilds from source
+BridgeTap-Compat/dist/
+BridgeTap-Compat/native/agent.jar
+BridgeTap-Compat/native/hud.jar
+BridgeTap-Compat/native/payload.dll
+BridgeTap-Launcher/vendor/launcher/BridgeTap.exe
+
+# Local toolchain, version snapshots and unpacked archives (machine specific)
+.tools/
+snapshots/
+.pack/
+
+# Source archives and history bundles produced while preparing a release
+BridgeTap-Source-*.zip
+BridgeTap-Source-*.manifest.txt
+compat-history.bundle
+
+# Development screenshots (125 files, ~17 MB). Only the ones actually
+# referenced by the documentation are kept.
+BridgeTap-Launcher/docs/*.png
+!BridgeTap-Launcher/docs/color-light.png
+!BridgeTap-Launcher/docs/color-open.png
+!BridgeTap-Launcher/docs/icon-preview.png
+!BridgeTap-Launcher/docs/shot-devices.png
+!BridgeTap-Launcher/docs/theme-dark.png
+!BridgeTap-Launcher/docs/theme-light.png
+
+# Logs, OS metadata and editor files
+*.log
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+*.iml
+*.tmp
+
+# Agent workspace metadata — local working notes, not part of the project
+.workbuddy/
+
+# MiSans shards are fetched by scripts/fetch-fonts.js; the licence forbids
+# redistributing them, so they must never enter the repository.
+BridgeTap-Launcher/src/renderer/assets/fonts/misans/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# ---------------------------------------------------------------------------
+# BridgeTap 外置启动器 —— 忽略规则（中文版）
+# 以上为完整英文版，此处为完整中文版，两者规则一致。
+# ---------------------------------------------------------------------------
+
+# 运行时依赖
+node_modules/
+
+# Electron 构建产物、安装包与中间文件
+BridgeTap-Launcher/dist/
+BridgeTap-Launcher/release/
+dist/
+release/
+
+# Gradle / Java 构建产物。
+# BridgeTap-Launcher/build/ 故意不忽略：里面是 electron-builder 打包要用的
+# icon.ico 与 icon.png。
+BridgeTap-Compat/build/
+BridgeTap-Compat/*/build/
+BridgeTap-Compat/.gradle/
+
+# 由 native/pack.sh 从源码重新构建的二进制
+BridgeTap-Compat/dist/
+BridgeTap-Compat/native/agent.jar
+BridgeTap-Compat/native/hud.jar
+BridgeTap-Compat/native/payload.dll
+BridgeTap-Launcher/vendor/launcher/BridgeTap.exe
+
+# 本机工具链、版本快照与解压出来的旧包（与具体机器绑定）
+.tools/
+snapshots/
+.pack/
+
+# 出包流程产生的源码包与历史备份
+BridgeTap-Source-*.zip
+BridgeTap-Source-*.manifest.txt
+compat-history.bundle
+
+# 开发截图（125 张，约 17 MB）。只保留文档里真正引用到的那几张。
+BridgeTap-Launcher/docs/*.png
+!BridgeTap-Launcher/docs/color-light.png
+!BridgeTap-Launcher/docs/color-open.png
+!BridgeTap-Launcher/docs/icon-preview.png
+!BridgeTap-Launcher/docs/shot-devices.png
+!BridgeTap-Launcher/docs/theme-dark.png
+!BridgeTap-Launcher/docs/theme-light.png
+
+# 日志、系统元数据与编辑器文件
+*.log
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+*.iml
+*.tmp
+
+# MiSans 分片由 scripts/fetch-fonts.js 取回；许可协议禁止再分发，不能进仓库。
+BridgeTap-Launcher/src/renderer/assets/fonts/misans/
+
+# Python 字节码
+__pycache__/
+*.pyc
+
+# 工作区元数据 —— 本地开发笔记，不属于项目内容
+.workbuddy/

@@ -1,0 +1,27 @@
+MiSans Font Intellectual Property License Agreement (Summary) / MiSans 字体知识产权许可协议（摘要）
+================================================================================================
+
+Font name / 字体名称：MiSans
+Copyright / 版权所有：Copyright (c) Beijing Xiaomi Mobile Software Co., Ltd.
+Source / 来源：https://hyperos.mi.com/font
+
+This program bundles the variable (VF) web build of MiSans, split into 56 woff2
+shards along the unicode ranges published by Xiaomi's official font service, stored
+under assets/fonts/misans/. It is packaged with the application and rendered inside
+this program's own UI only; no glyph was modified in any way.
+
+本程序内置 MiSans 的可变字体（VF）网页版本，按小米官方字体服务的 unicode
+区间切分为 56 个 woff2 分片，存放于 assets/fonts/misans/。使用方式为随程序
+打包、在本程序界面内渲染，未对字体文件做任何字形改造。
+
+Key points (the full agreement as published by Xiaomi prevails) / 许可要点（完整协议以小米官方发布文本为准）：
+
+1. Free to use, commercial use included. / 允许免费使用，包括商业用途。
+2. Attribution is required when the font is used — this program credits MiSans at the bottom of the About page. / 使用时应注明使用了 MiSans 字体 —— 本程序在「关于」页底部标注。
+3. The MiSans font, or any of its individual components, must not be adapted or re-developed. / 不得对 MiSans 字体或其任何单独组件进行改编或二次开发。
+4. The font software itself must not be rented out, sub-licensed, lent, distributed or sold on its own. That restriction does not apply to works created with MiSans (screenshots of this program's UI, promotional material, and so on). / 不得单独将字体对外租赁、再许可、出借、分发或售卖字体软件本身。上述限制不适用于使用 MiSans 创作的作品（本程序的界面截图、宣传素材等）。
+
+These shards are distributed inside this program's own installer only, for UI
+rendering; the font is not offered as a separate download.
+
+本程序仅在自身安装包内分发这些字体分片，供界面显示使用，不提供字体的单独下载。

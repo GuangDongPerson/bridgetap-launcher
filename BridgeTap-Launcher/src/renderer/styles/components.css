@@ -1,0 +1,1767 @@
+/* Component styles: chip, segmented control, device card, console, primary button, toast · 组件样式：芯片、分段控件、设备卡、控制台、主按钮、Toast。 */
+
+/* ── Chip / status dot · 芯片 / 状态点 ──────────────────── */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--r-full);
+  font-size: var(--fs-tiny);
+  color: var(--ink-2);
+  background: var(--glass);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.chip--ghost {
+  background: var(--glass-strong);
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-4);
+  flex: 0 0 auto;
+}
+
+.chip--ok .dot {
+  background: var(--ink);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.chip--warn .dot {
+  background: var(--ink-3);
+  box-shadow: 0 0 0 3px var(--line);
+}
+
+/* ── Segmented control (view-type) · 分段控件（对应参考页的 view-type） ── */
+
+.segmented {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 3px;
+  border-radius: var(--r-full);
+  background: var(--glass);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.segmented__track {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  height: 26px;
+  border-radius: var(--r-full);
+  background: var(--surface);
+  box-shadow: 0 1px 2px var(--line), 0 6px 14px -10px var(--btn-halo);
+  transition: transform var(--dur-base) var(--ease-spring), width var(--dur-base) var(--ease-spring);
+  pointer-events: none;
+}
+
+.segmented__item {
+  position: relative;
+  z-index: 1;
+  height: 26px;
+  padding: 0 16px;
+  border-radius: var(--r-full);
+  font-size: var(--fs-small);
+  color: var(--ink-2);
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.segmented__item.is-active {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.segmented__item:hover {
+  color: var(--ink);
+}
+
+/* ── Ghost buttons · 幽灵按钮 ───────────────────────────── */
+
+.ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--r-full);
+  font-size: var(--fs-tiny);
+  color: var(--ink-2);
+  border: 1px solid var(--line-strong);
+  background: var(--glass);
+  transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+
+.ghost__icon {
+  width: 14px;
+  height: 14px;
+}
+
+.ghost:hover {
+  color: var(--ink);
+  border-color: var(--accent-ring);
+  background: var(--glass-strong);
+}
+
+.ghost:active {
+  transform: scale(0.97);
+}
+
+/* ── Device cards · 设备卡 ──────────────────────────────── */
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-12);
+  width: 100%;
+  padding: 16px 18px 18px;
+  text-align: left;
+  border-radius: var(--r-xl);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+  transition: transform var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out);
+}
+
+/* Soft glow inside the card, lit on hover / selection (the card version of the reference page's grouped-glow) · 卡片内部的柔光，hover/选中时点亮（参考页 grouped-glow 的卡片版） */
+/* Soft glow inside the card, lit on hover / selection.
+ * Two pitfalls were hit here: ① the layer once had a fixed width:80% / left:-10%, so the gradient ran out before
+ * the edge and the right third of the card was a hard straight line; ② the gradient coordinates are relative to this
+ * layer, so once the layer is offset the glow no longer lines up with the pointer and drifts further right. That is why
+ * the layer now has to cover the whole card (inset:0) and the radius is drawn in px, so it is not cut at the boundary.
+ *
+ * 卡片内部的柔光，hover/选中时点亮。
+ * 这里踩过两个坑：① 曾经给这个层定死 width:80% / left:-10%，渐变到不了边就断了，
+ * 卡片右侧三分之一是一条直线硬边；② 渐变坐标是相对这个层的，层一偏移，光斑就跟鼠标对不上，
+ * 越往右偏得越多。所以现在层必须铺满整张卡（inset:0），半径用 px 画，才不会在边界处被切。 */
+.card__glow {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    var(--card-glow-size) circle at var(--mx, 50%) var(--my, 50%),
+    var(--card-glow),
+    transparent 100%
+  );
+  opacity: 0;
+  transition: opacity var(--dur-slow) var(--ease-out);
+  pointer-events: none;
+}
+
+.card:hover {
+  transform: translateY(-3px);
+  border-color: var(--accent-ring);
+  box-shadow: var(--shadow-card-hover), 0 0 0 4px var(--accent-soft);
+}
+
+.card:hover .card__glow {
+  opacity: 1;
+}
+
+.card.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 20px 44px -26px var(--btn-halo);
+}
+
+.card.is-disabled {
+  opacity: 0.62;
+}
+
+.card.is-disabled:hover {
+  transform: none;
+  border-color: var(--line);
+  box-shadow: var(--shadow-card);
+}
+
+.card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-12);
+}
+
+.card__icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  border-radius: var(--r-m);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--on-accent);
+  letter-spacing: 0.02em;
+  background: var(--accent);
+  box-shadow: 0 8px 18px -12px var(--btn-halo);
+}
+
+/*
+ * Client logos always sit on a neutral base:
+ * pairing a brand-colour gradient with a pure black-and-white UI fights it, so use --surface-3 + a hairline edge instead.
+ * Lunar's mark is pure white on its own, so in the light theme filter: invert(1) flips it to black; otherwise it is invisible on a pale base.
+ *
+ * 客户端 logo 一律站在中性底上：
+ * 纯黑白界面里再给 logo 配品牌色渐变会打架，改用 --surface-3 + 一圈发丝边。
+ * Lunar 的图形本身是纯白，浅色主题下用 filter: invert(1) 反相成黑，否则贴在浅底上看不见。
+ */
+.card__icon--image {
+  padding: 6px;
+  overflow: hidden;
+  background: var(--surface-3);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+[data-theme="dark"] .card__icon--image {
+  background: #1b1b1b;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="light"] .card__icon--lunar img {
+  filter: invert(1);
+}
+
+.card__icon--image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.card__titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.card__name {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+
+.card__sub {
+  font-size: var(--fs-tiny);
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.card__check {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 12px;
+  transform: scale(0.4);
+  opacity: 0;
+  transition: transform var(--dur-base) var(--ease-spring), opacity var(--dur-fast) var(--ease-out);
+}
+
+.card.is-selected .card__check {
+  transform: scale(1);
+  opacity: 1;
+}
+
+.card__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+  font-size: var(--fs-tiny);
+}
+
+.card__label {
+  color: var(--ink-3);
+  flex: 0 0 auto;
+}
+
+.card__value {
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Three-step preparation notes · 三步准备说明 ────────── */
+
+.guide {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: var(--gap-16) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.guide__item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 14px;
+  border-radius: var(--r-l);
+  background: var(--glass);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: border-color var(--dur-base) var(--ease-out), background var(--dur-base) var(--ease-out);
+}
+
+.guide__item:hover {
+  border-color: var(--accent-ring);
+  background: var(--glass-strong);
+}
+
+.guide__index {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.guide__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.guide__text b {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.guide__text i {
+  font-style: normal;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--ink-3);
+}
+
+/* ── Empty state · 空状态 ───────────────────────────────── */
+
+.empty[hidden] {
+  display: none;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 100%;
+  min-height: 260px;
+  text-align: center;
+}
+
+.empty__art {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 6px;
+}
+
+.empty__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid var(--accent-ring);
+  opacity: 0.55;
+}
+
+.empty__ring--slow {
+  inset: 14px;
+  border-color: var(--line-strong);
+}
+
+.empty__core {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, var(--accent-hover), var(--accent));
+  box-shadow: 0 0 26px 4px var(--accent-soft);
+}
+
+.empty__title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.empty__desc {
+  font-size: var(--fs-tiny);
+  color: var(--ink-3);
+}
+
+/* ── Console · 控制台 ───────────────────────────────────── */
+
+.console {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border-radius: var(--r-xl);
+  background: var(--console-bg);
+  border: 1px solid var(--console-line);
+  box-shadow: 0 24px 60px -34px rgba(0, 0, 0, 0.8);
+  overflow: hidden;
+}
+
+.console__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--console-line);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.console__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--console-ink-dim);
+}
+
+.console__title {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--console-ink-dim);
+  letter-spacing: 0.04em;
+}
+
+.console__action {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--console-ink-dim);
+  padding: 4px 8px;
+  border-radius: var(--r-s);
+  transition: color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+}
+
+.console__action:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Two buttons side by side: only export takes the auto margin on its left, clear log follows right after it · 两个按钮并排：只有导出吃掉左边的自动间距，清空紧跟着它 */
+#btnClearLog {
+  margin-left: 0;
+}
+
+.console__body {
+  flex: 1;
+  margin: 0;
+  padding: 12px 14px 16px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--console-ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+.console__line {
+  display: block;
+}
+
+.console__line--agent {
+  color: #f2f2f2;
+}
+
+.console__line--stderr {
+  color: #ffffff;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.4);
+}
+
+.console__line--info,
+.console__line--stdout {
+  color: #9c9c9c;
+}
+
+/* ── Primary button (MCHOSE glow 1:1) · 主按钮（MCHOSE 光效 1:1） ── */
+/*
+ * Aligned to the MCHOSE HUB du-button on this machine:
+ *   · pill height 40 → 48 here (our primary CTA is bigger); the radius is still full
+ *   · transition .2s ease; hover changes only the shadow and offset, not the fill (their state layer overlays a tint)
+ *   · inner highlight inset 0 -1px 4px / inset 0 -2px 8px rgba(255,255,255,.4): gives the pure black pill a "solid glass" edge
+ *   · pointer-following spot: radial + blur 10px, white .95 in the light theme, black .12 in the dark theme
+ *
+ * 对齐的是本机 MCHOSE HUB 的 du-button：
+ *   · 胶囊高 40 → 这里 48（我们的主 CTA 更大），半径仍是 full
+ *   · 过渡 .2s ease，hover 只改阴影和位移，不改底色（他们的 state 层是叠一层色）
+ *   · 内高光 inset 0 -1px 4px / inset 0 -2px 8px rgba(255,255,255,.4)：让纯黑胶囊有"实心玻璃"的边
+ *   · 指针跟随光斑：radial + blur 10px，浅色主题白 .95，暗色主题黑 .12
+ */
+
+.btn {
+  position: relative;
+  min-width: 232px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 48px;
+  padding: 0 34px;
+  border-radius: var(--r-full);
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  overflow: hidden;
+  isolation: isolate;
+  transition: transform var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out),
+    background-color var(--dur-base) var(--ease-out);
+}
+
+.btn--primary {
+  color: var(--btn-ink);
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
+  box-shadow: var(--btn-shadow);
+}
+
+/* Pointer-following spot: --lx / --ly are written by motion.trackGlow() (0~100%) · 跟随指针的光斑：--lx / --ly 由 motion.trackGlow() 写入（0~100%） */
+.btn__glow {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    var(--btn-glow-size) circle at var(--lx, 50%) var(--ly, 50%),
+    rgba(var(--btn-glow-rgb), var(--btn-glow-alpha)) 0%,
+    rgba(var(--btn-glow-rgb), calc(var(--btn-glow-alpha) * 0.55)) 44%,
+    transparent 74%
+  );
+  filter: blur(var(--btn-glow-blur));
+  opacity: 0;
+  transition: opacity var(--dur-base) ease;
+  pointer-events: none;
+}
+
+.btn--primary:hover:not(:disabled) .btn__glow,
+.btn--primary:focus-visible .btn__glow {
+  opacity: 1;
+}
+
+.btn--primary:active:not(:disabled) .btn__glow {
+  opacity: 0.55;
+}
+
+/* Hover: outer glow spreads + lifts 1px (a beefed-up version of MCHOSE's hover shadow = 0 4px 27px rgba(0,0,0,.06)) · 悬停：外发光扩散 + 抬起 1px（MCHOSE 的 hover shadow = 0 4px 27px rgba(0,0,0,.06) 的加强版） */
+.btn--primary:hover:not(:disabled) {
+  box-shadow: var(--btn-shadow-hover);
+  transform: translateY(-1px);
+}
+
+.btn--primary:active:not(:disabled) {
+  transform: translateY(0) scale(0.985);
+  box-shadow: 0 4px 14px -10px var(--btn-halo);
+}
+
+/*
+ * Disabled: neutral base + readable grey text + a thin edge.
+ * A pitfall here: :disabled only changed color, and the fill was overridden by the solid fill of body[data-phase="attached"],
+ * giving dark text on dark (light theme) / light text on light (dark theme) — the button became "a black blob / a white blob" with no readable text.
+ *
+ * 不可用：中性底 + 可读的灰字 + 一圈细边。
+ * 这里踩过坑：:disabled 只改了 color，底色被 body[data-phase="attached"] 的实心底色覆盖，
+ * 结果深底配深字（浅色）/ 浅底配浅字（暗色）——按钮就变成"黑一坨 / 白一坨"，一个字都看不见。
+ */
+.btn:disabled {
+  cursor: not-allowed;
+  color: var(--ink-3);
+  background: var(--surface-3);
+  border-color: var(--line);
+  box-shadow: none;
+  filter: none;
+}
+
+/* Injecting: busy, not broken — keep the solid look, just not clickable · 正在注入：忙着，不是坏着——保持实心外观，只是点不动 */
+body[data-phase="injecting"] .btn--primary:disabled {
+  color: var(--btn-ink);
+  background: var(--btn-bg);
+  border-color: var(--btn-border);
+}
+
+/* Injection done: final state. Keep it solid + readable, with a soft status ring around it · 注入完成：终态。继续保持实心 + 可读文案，外面加一圈柔和的状态环 */
+body[data-phase="attached"] .btn--primary:disabled {
+  color: var(--btn-ink);
+  background: var(--btn-bg);
+  border-color: var(--btn-border);
+  box-shadow: 0 0 0 3px var(--accent-soft), var(--btn-shadow);
+  cursor: default;
+}
+
+.btn__label,
+.btn__spinner {
+  position: relative;
+  z-index: 2;
+}
+
+.btn__spinner {
+  display: none;
+  width: 17px;
+  height: 17px;
+}
+
+.btn__spinner svg {
+  animation: spin 780ms linear infinite;
+}
+
+/* Injecting: the button turns into an "in progress" shape, the halo breathes · 注入中：按钮变成"进行中"形态，光晕呼吸 */
+body[data-phase="injecting"] .btn--primary {
+  animation: glow-breathe 2.2s var(--ease-out) infinite;
+}
+
+body[data-phase="injecting"] .btn__spinner {
+  display: block;
+}
+
+/* ── Theme toggle (light / dark / auto) · 主题切换按钮（浅色 / 暗色 / 自动） ── */
+
+.themebtn {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-s);
+  color: var(--ink-2);
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.themebtn:hover {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.themebtn:active {
+  transform: scale(0.92);
+}
+
+.themebtn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* All three icons sit in the same grid cell; only the one for the current mode is shown · 三个图标叠在同一格里，只显示当前模式那个 */
+.themebtn__icon {
+  grid-area: 1 / 1;
+  opacity: 0;
+  transform: scale(0.7) rotate(-25deg);
+  transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-spring);
+}
+
+html[data-mode="auto"] .themebtn__icon--auto,
+html[data-mode="light"] .themebtn__icon--light,
+html[data-mode="dark"] .themebtn__icon--dark {
+  opacity: 1;
+  transform: none;
+}
+
+
+/* ── Click ripple · 点击涟漪 ────────────────────────────── */
+
+.ripple {
+  position: absolute;
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  background: radial-gradient(circle, var(--ripple), transparent);
+  pointer-events: none;
+  animation: ripple-out 620ms var(--ease-out) forwards;
+}
+
+.ripple--dark {
+  background: radial-gradient(circle, var(--ripple-dark), transparent);
+}
+
+/* ── Toast ──────────────────────────────────────────────── */
+
+.toasts {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 380px;
+  padding: 12px 14px;
+  border-radius: var(--r-m);
+  background: var(--glass-strong);
+  border: 1px solid var(--line);
+  box-shadow: 0 18px 40px -22px var(--btn-halo), var(--glass-inset);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  font-size: var(--fs-tiny);
+  line-height: 1.5;
+  color: var(--ink);
+  pointer-events: auto;
+}
+
+.toast__bar {
+  width: 3px;
+  align-self: stretch;
+  border-radius: var(--r-full);
+  background: var(--accent);
+  flex: 0 0 auto;
+}
+
+.toast--success .toast__bar {
+  background: var(--success);
+}
+
+.toast--error .toast__bar {
+  background: var(--danger);
+}
+
+.toast__text {
+  flex: 1;
+  /* A flex item's min-width defaults to auto; a long path (the absolute jar path in a FATAL line) refuses to shrink and pushes out of the card · flex item 的 min-width 默认是 auto，长路径（FATAL 行里的 jar 绝对路径）不肯收缩就会顶出卡片 */
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ── Dark-theme layering tweaks · 暗色主题的层次微调 ─────────
+ * Pure black and white blends into one mass, so dark mode has to layer by "who is one step brighter":
+ *   page #0a0a0a → card #141414 → console #121212 + 1px bright edge → segmented slider #212121
+ *
+ * 纯黑白最容易糊成一片，暗色里必须靠"谁比谁亮一档"来分层：
+ *   页面 #0a0a0a → 卡片 #141414 → 控制台 #121212 + 1px 亮边 → 分段滑块 #212121
+ */
+[data-theme="dark"] .console {
+  background: #121212;
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 24px 60px -34px #000;
+}
+
+[data-theme="dark"] .console__bar {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+[data-theme="dark"] .segmented__track {
+  background: var(--surface-3);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] .card {
+  background: var(--surface);
+}
+
+[data-theme="dark"] .chip--ghost {
+  background: var(--glass-strong);
+}
+
+/* ── Settings page · 设置页 ─────────────────────────────── */
+
+.settings {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.82fr) minmax(360px, 1.18fr);
+  gap: var(--gap-16);
+  align-items: start;
+  padding-bottom: 12px;
+}
+
+/* ── About · 关于 ───────────────────────────────────────── */
+
+.about {
+  padding-bottom: 12px;
+}
+
+.about-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--gap-16);
+}
+
+.about-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 30px 20px 26px;
+  border-radius: var(--r-xl);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-card);
+}
+
+.about-avatar {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-3);
+}
+
+.about-name {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-2);
+  letter-spacing: 0.01em;
+}
+
+.about-links {
+  display: flex;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.about-link {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  color: var(--ink-2);
+  background: var(--glass);
+  border: 1px solid var(--line);
+  transition: color var(--dur-base) var(--ease-out), border-color var(--dur-base) var(--ease-out),
+    background var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
+}
+
+.about-link:hover {
+  color: var(--ink);
+  border-color: var(--accent-ring);
+  background: var(--glass-strong);
+  transform: translateY(-1px);
+}
+
+.about-link svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+.about-foot {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--gap-16);
+}
+
+/* Font credit: the licence requires it, but it must not steal attention from the layout · 字体署名：许可要求注明，但不能抢版面的注意力 */
+.about-credit {
+  margin: 10px 0 0;
+  text-align: center;
+  font-size: 10.5px;
+  color: var(--ink-4);
+  letter-spacing: 0.01em;
+}
+
+@media (max-width: 720px) {
+  .about-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ── Update dialog · 更新弹窗 ───────────────────────────── */
+
+.upd {
+  width: min(520px, calc(100vw - 40px));
+  padding: 22px 22px 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-xl);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+}
+
+.upd::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.upd__title {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.upd__notes {
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: var(--r-l);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ink-2);
+}
+
+.upd__status {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.upd__prog {
+  margin-top: 12px;
+}
+
+.upd__bar {
+  height: 4px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.upd__fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.2s linear;
+}
+
+/* Percent / bytes / speed under the bar. Tabular numerals keep the numbers from jittering as they change.
+ * 进度条下方的百分比、大小与速度。等宽数字，避免数值跳动时左右抖。 */
+.upd__meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 6px;
+  font-size: var(--fs-tiny);
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.upd__pct {
+  min-width: 3.4em;
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+.upd__bytes {
+  flex: 1;
+  font-family: var(--font-mono);
+}
+
+.upd__speed {
+  min-width: 6em;
+  text-align: right;
+  font-family: var(--font-mono);
+  color: var(--ink-2);
+}
+
+.upd__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+/* Dialog buttons are their own family: not the same tier as the 48px primary button in the main UI;
+   both are 34px tall with a shared minimum width, so a long label cannot make one bigger than the other.
+ *
+ * 弹窗按钮自成一套：和主界面那颗 48px 的主按钮不是同一个层级，
+   两个按钮统一 34px 高、统一最小宽度，文字有多长都不会把按钮撑得一大一小 */
+.upd__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 104px;
+  height: 34px;
+  padding: 0;
+  border-radius: var(--r-full);
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: var(--fs-small);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.upd__btn:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--accent-ring);
+  background: var(--accent-soft);
+}
+
+.upd__btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.upd__btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.upd__btn--primary {
+  color: var(--btn-ink);
+  background: var(--btn-bg);
+  border-color: var(--btn-border);
+  box-shadow: 0 4px 14px -8px var(--btn-halo);
+}
+
+.upd__btn--primary:hover:not(:disabled) {
+  color: var(--btn-ink);
+  background: var(--btn-bg);
+  border-color: var(--btn-border);
+  box-shadow: 0 6px 18px -8px var(--btn-halo-strong);
+}
+
+/* Once the route list expands, the update notes must not eat half the screen, otherwise the whole window exceeds 768 in height · 线路列表一展开，更新说明就不能再吃掉半屏，否则整窗超过 768 高度 */
+.upd.is-mirroring .upd__notes {
+  max-height: 148px;
+}
+
+/* ── Mirror routing (in update dialog) · 镜像选路（更新弹窗内展开） ── */
+
+.upd.is-mirroring {
+  width: min(580px, calc(100vw - 40px));
+}
+
+.mirror {
+  margin-top: 14px;
+}
+
+.mirror[hidden] {
+  display: none;
+}
+
+.mirror__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.mirror__spinner {
+  display: none;
+  width: 13px;
+  height: 13px;
+  color: var(--ink-3);
+}
+
+.mirror.is-probing .mirror__spinner {
+  display: block;
+}
+
+.mirror__spinner svg {
+  animation: spin 780ms linear infinite;
+}
+
+.mirror__hint {
+  font-size: var(--fs-tiny);
+  color: var(--ink-3);
+}
+
+.mirror__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 258px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.mrow {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  text-align: left;
+  border-radius: var(--r-m);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  transition: border-color var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
+}
+
+.mrow:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  background: var(--surface-3);
+}
+
+.mrow.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Unavailable / probe failed: dim the whole row but do not hide it, so the user sees which one is down · 不可用 / 测速失败：整行压暗但不隐藏，让用户看到是哪条挂了 */
+.mrow:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.mrow__radio {
+  width: 13px;
+  height: 13px;
+  border-radius: var(--r-full);
+  border: 1.5px solid var(--line-strong);
+  transition: border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.mrow.is-selected .mrow__radio {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 3px var(--accent);
+}
+
+.mrow__main {
+  min-width: 0;
+}
+
+.mrow__name {
+  display: block;
+  font-size: var(--fs-small);
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.mrow__host {
+  display: block;
+  margin-top: 1px;
+  font-size: 11px;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mrow__stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.mrow__stat {
+  min-width: 52px;
+  text-align: right;
+}
+
+.mrow__stat--bad {
+  color: var(--ink-3);
+}
+
+/* ── Custom confirm modal · 自绘确认弹窗 ────────────────── */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.modal[hidden] {
+  display: none;
+}
+
+.modal__scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  backdrop-filter: blur(0px);
+  -webkit-backdrop-filter: blur(0px);
+  transition: opacity 0.24s ease, backdrop-filter 0.24s ease;
+}
+
+.modal.is-open .modal__scrim {
+  opacity: 1;
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+}
+
+.modal__card {
+  position: relative;
+  width: min(400px, calc(100vw - 48px));
+  padding: 22px 22px 18px;
+  border-radius: var(--r-xl);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.32);
+  opacity: 0;
+  transform: translateY(10px) scale(0.98);
+  transition: opacity 0.24s ease, transform 0.24s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+.modal.is-open .modal__card {
+  opacity: 1;
+  transform: none;
+}
+
+.modal__title {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.modal__body {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+  text-align: center;
+}
+
+.modal__actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.modal__btn {
+  min-width: 108px;
+  height: 38px;
+  padding: 0 18px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+}
+
+.modal__btn:active {
+  transform: translateY(1px);
+}
+
+.modal__btn--ghost {
+  background: var(--surface-3);
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.modal__btn--ghost:hover {
+  background: var(--surface-2);
+  border-color: var(--line-strong);
+}
+
+.modal__btn--danger {
+  background: #c0392b;
+  color: #ffffff;
+}
+
+.modal__btn--danger:hover {
+  background: #a93226;
+}
+
+.modal__btn[hidden] {
+  display: none;
+}
+
+/* The big button at the bottom is the "inject device" action, shown on the devices page only · 底部那颗大按钮是"注入设备"的动作，只在设备页出现 */
+body[data-view="log"] .connect__footer,
+body[data-view="settings"] .connect__footer,
+body[data-view="about"] .connect__footer {
+  display: none;
+}
+
+/* Process count + rescan only make sense on the devices page; hide them on the other pages · 进程计数 + 重新扫描只对设备页有意义，其余页收起 */
+body[data-view="log"] .toolbar__right,
+body[data-view="settings"] .toolbar__right,
+body[data-view="about"] .toolbar__right {
+  display: none;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: var(--r-xl);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-card);
+  /* clip rather than hidden: hidden turns the panel into a scroll container, which breaks the sticky title · clip 而不是 hidden：hidden 会让 panel 变成滚动容器，标题的 sticky 就失效了 */
+  overflow: clip;
+}
+
+.panel__head {
+  display: grid;
+  gap: 4px;
+  padding: 16px 18px 12px;
+  /* One notch thicker than the dividers inside the content, so the two panel heads are told apart at a glance · 比内容区的分隔线粗一档：两个面板头要一眼分得出来 */
+  border-bottom: 2px solid var(--line-strong);
+  /*
+   * The sticky range is each panel's own .panel: the left column is short, so its title slides away at the bottom;
+   * the right column is long, so it sticks all the way to the end. No JS check needed.
+   *
+   * 吸顶范围是各自的 .panel：左栏内容短，滚到底时标题自然跟着滑走；
+   * 右栏长，就一直吸到右栏结束。不需要 JS 判断。
+   */
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface);
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+}
+
+.panel__title {
+  margin: 0;
+  /* Body text is 14.5 now, so the panel title cannot stay at 14 — a title smaller than its body reads wrong · 正文 14.5 了，面板标题不能还是 14——标题比正文小是反的 */
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.panel__sub {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+
+.panel__sub code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: var(--r-xs);
+  background: var(--accent-soft);
+}
+
+.panel__state {
+  justify-self: start;
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1;
+  padding: 5px 8px;
+  border-radius: var(--r-full);
+  color: var(--ink-3);
+  background: var(--surface-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.panel__state[data-tone="ok"] {
+  color: var(--ink);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+
+.panel__state[data-tone="warn"] {
+  color: var(--ink-2);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  background: transparent;
+}
+
+.panel__state[data-tone="busy"] {
+  color: var(--ink-2);
+}
+
+.panel__body {
+  padding: 4px 18px 10px;
+}
+
+/* Each row: title + hint on the left, control on the right · 每行：左边标题+说明，右边控件 */
+.srow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 1px dashed var(--line);
+}
+
+.srow:last-child {
+  border-bottom: 0;
+}
+
+.srow__text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.srow__label {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.srow__hint {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink-3);
+}
+
+.srow__ctl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-self: end;
+}
+
+.srow__value {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Switch · 开关 */
+.switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  border-radius: var(--r-full);
+  background: var(--surface-3);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  transition: background var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out);
+}
+
+.switch__knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--ink-4);
+  transition: transform var(--dur-base) var(--ease-spring), background var(--dur-base) var(--ease-out);
+}
+
+.switch[aria-checked="true"] {
+  background: var(--accent);
+  box-shadow: none;
+}
+
+.switch[aria-checked="true"] .switch__knob {
+  transform: translateX(18px);
+  background: var(--on-accent);
+}
+
+/* Two/three-way choice · 二/三选一 */
+.choices {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: var(--r-full);
+  background: var(--surface-3);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.choices__item {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--r-full);
+  font-size: 11.5px;
+  color: var(--ink-3);
+  transition: color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+}
+
+.choices__item:hover {
+  color: var(--ink);
+}
+
+.choices__item.is-active {
+  color: var(--on-accent);
+  background: var(--accent);
+  font-weight: 500;
+}
+
+/* Native select / number, unified into a monochrome thin-border control · 原生 select / number，统一成黑白的细边控件 */
+.select,
+.num__input {
+  height: 30px;
+  padding: 0 8px;
+  border-radius: var(--r-s);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+}
+
+.select:hover,
+.num__input:hover {
+  border-color: var(--ink-4);
+}
+
+.select:focus-visible,
+.num__input:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 1px;
+}
+
+.num {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.num__input {
+  width: 74px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.num__unit {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+/* Text settings (the wording of Gain / No Gain): the placeholder is the default value, empty means default · 文本类设置（Gain / No Gain 的措辞）：占位符就是默认值，空着即默认 */
+.num--text .text__input {
+  width: 156px;
+  text-align: left;
+  font-variant-numeric: normal;
+}
+
+.text__input::placeholder {
+  color: var(--ink-4);
+  font-style: italic;
+}
+
+/* Slider · 滑块 */
+.range {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.range__input {
+  width: 132px;
+  height: 22px;
+  appearance: none;
+  background: transparent;
+}
+
+.range__input::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: var(--r-full);
+  background: var(--line-strong);
+}
+
+.range__input::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+
+.range__value {
+  min-width: 34px;
+  text-align: right;
+  font-size: 11.5px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Path box · 路径盒子 */
+.pathbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.pathbox__text {
+  max-width: 210px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-2);
+  padding: 5px 8px;
+  border-radius: var(--r-s);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+.btnrow {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.ghost--tiny {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+.ghost--tiny:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── Text colour section (swatches) · 文本颜色分区（色块选择器） ── */
+
+.colorset {
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+.colorset__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0 10px;
+}
+
+.colorset__info {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.colorset__title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.colorset__hint {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+/* The current palette is visible at a glance even when collapsed · 收起时也能一眼看到当前这套配色 */
+.colorset__preview {
+  display: flex;
+  gap: 3px;
+}
+
+.colorset__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--sw);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.32);
+}
+
+.colorset__body {
+  display: grid;
+  gap: 12px;
+  padding: 2px 0 14px;
+}
+
+.colorset__body[hidden] {
+  display: none;
+}
+
+.crow {
+  display: grid;
+  gap: 6px;
+}
+
+.crow__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.crow__label {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.crow__code {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.swatch {
+  position: relative;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: var(--sw);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.28);
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.swatch:hover {
+  transform: translateY(-1px);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.28), 0 4px 10px -6px rgba(0, 0, 0, 0.65);
+}
+
+.swatch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.swatch.is-active {
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35), 0 0 0 2px var(--surface), 0 0 0 3.5px var(--accent);
+}
+
+/* The selected one gets a small white dot, visible on both black and white blocks · 选中的那个打一个小白点，黑白块上都能看清 */
+.swatch.is-active::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.55);
+}

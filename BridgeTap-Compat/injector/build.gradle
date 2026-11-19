@@ -1,0 +1,142 @@
+dependencies {
+	implementation project(":core")
+}
+
+tasks.register("checkNative") {
+	group = "build"
+	doFirst {
+		File dll = new File(rootProject.projectDir, "dist/native/bridgetap-payload.dll")
+		File exe = new File(rootProject.projectDir, "dist/native/btinject.exe")
+		if (!dll.isFile() || !exe.isFile()) {
+			throw new GradleException("native binaries missing - run native/build.sh first"
+				+ " (needs MSVC; see native/build.sh header for why vcvars is bypassed)")
+		}
+	}
+}
+
+// The injector is the user-facing exe: it must carry the agent and both native binaries so the
+// folder is self-contained and no path next to the jar has to be right.
+jar {
+	dependsOn project(":agent").tasks.jar
+	dependsOn checkNative
+	archiveBaseName = "bridgetap-injector"
+	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+	manifest {
+		attributes(
+			"Main-Class": "com.bridger.compat.injector.Main",
+			"Implementation-Version": project.version
+		)
+	}
+
+	from(project(":agent").tasks.jar.archiveFile) {
+		rename { "agent.jar" }
+		into "com/bridger/compat/injector/payload"
+	}
+
+	from(new File(rootProject.projectDir, "dist/native")) {
+		include "btinject.exe"
+		include "bridgetap-payload.dll"
+		into "com/bridger/compat/injector/native"
+	}
+
+	from {
+		configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+	} {
+		exclude "META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA", "module-info.class"
+	}
+}
+
+/**
+ * Self-contained exe: jlink trims a runtime (java.desktop for the GUI, jdk.attach for the hot
+ * attach), jpackage wraps it with a native launcher. app-image needs no WiX, so this works on a
+ * machine that only has a JDK.
+ */
+tasks.register("packageExe") {
+	dependsOn jar
+	group = "distribution"
+	description = "Builds dist/BridgeTapInjector/BridgeTapInjector.exe (jlink + jpackage app-image)."
+
+	doLast {
+		File jdkHome = new File(System.getProperty("java.home"))
+		File work = new File(layout.buildDirectory.get().asFile, "jpackage")
+		File runtime = new File(work, "runtime")
+		File input = new File(work, "input")
+		File outDir = new File(rootProject.layout.projectDirectory.asFile, "dist")
+		File stage = new File(work, "out")
+
+		work.deleteDir()
+		input.mkdirs()
+		stage.mkdirs()
+		outDir.mkdirs()
+
+		copy {
+			from(tasks.jar.archiveFile)
+			into input
+			rename { "bridgetap-injector.jar" }
+		}
+
+		execTool(jdkHome, "bin/jlink",
+			"--add-modules", "java.base,java.desktop,java.logging,java.management,jdk.attach,jdk.unsupported",
+			"--strip-debug", "--no-header-files", "--no-man-pages", "--compress=zip-6",
+			"--output", runtime.getAbsolutePath())
+
+		execTool(jdkHome, "bin/jpackage",
+			"--type", "app-image",
+			"--win-console",
+			"--name", "BridgeTapInjector",
+			"--app-version", project.version.toString(),
+			"--vendor", "BridgeTap",
+			"--description", "BridgeTap hot injector for Minecraft 1.8.9 clients",
+			"--input", input.getAbsolutePath(),
+			"--main-jar", "bridgetap-injector.jar",
+			"--main-class", "com.bridger.compat.injector.Main",
+			"--runtime-image", runtime.getAbsolutePath(),
+			"--dest", stage.getAbsolutePath(),
+			"--java-options", "-Dfile.encoding=UTF-8")
+
+		// jpackage builds into a staging directory first: the real dist folder is frequently held
+		// open by a running instance of the previous build (the injector is an app-image, and a
+		// live BridgeTapInjector.exe locks its own directory on Windows). Landing the image here
+		// means a locked target degrades to a suffixed folder instead of failing the build.
+		File image = new File(stage, "BridgeTapInjector")
+		if (!image.isDirectory()) {
+			throw new GradleException("jpackage produced no app-image at " + image)
+		}
+		// Version in the folder name: several builds coexist on a machine (the injector holds its
+		// own directory open), and a bare "BridgeTapInjector" leaves the user guessing which one
+		// is current.
+		File target = new File(outDir, "BridgeTapInjector-" + project.version)
+		if (target.exists() && !target.deleteDir()) {
+			target = new File(outDir, "BridgeTapInjector-" + project.version + "-b")
+			if (target.exists()) {
+				target.deleteDir()
+			}
+			println "  previous image is locked by a running instance; landing in " + target.name
+		}
+		copy {
+			from image
+			into target
+		}
+
+		File exe = new File(target, "BridgeTapInjector.exe")
+		if (!exe.isFile()) {
+			throw new GradleException("jpackage did not produce " + exe)
+		}
+		long total = 0
+		exe.getParentFile().eachFileRecurse { total += it.length() }
+		println "exe: " + exe + "  (launcher " + (exe.length() / 1024) + " KB, folder "
+			+ (total / 1024 / 1024) + " MB)"
+	}
+}
+
+private void execTool(File jdkHome, String tool, String... args) {
+	List<String> command = [new File(jdkHome, tool).getAbsolutePath()]
+	command.addAll(args as List<String>)
+	Process process = new ProcessBuilder(command).redirectErrorStream(true).start()
+	process.inputStream.eachLine { println "  " + it }
+	int code = process.waitFor()
+	if (code != 0) {
+		throw new GradleException("command failed (" + code + "): " + command.join(" "))
+	}
+}

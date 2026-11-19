@@ -1,0 +1,42 @@
+version = "2.6.0"
+
+subprojects {
+	apply plugin: "java"
+
+	group = "com.bridger.compat"
+	version = "2.6.0"
+
+	repositories {
+		mavenCentral()
+	}
+
+	tasks.withType(JavaCompile).configureEach {
+		options.encoding = "UTF-8"
+		// Must stay 8: `--release 17` emits major 61 bytecode, which a Java 8/11 client
+		// refuses to load as "Bootstrap not loadable from bootstrap" — the jar is on the
+		// bootstrap search path but the class never resolves. The agent uses nothing
+		// beyond Java 8 APIs, so 8 is both the safe floor and the widest reach.
+		options.release = 8
+	}
+
+	java {
+		sourceCompatibility = JavaVersion.VERSION_1_8
+		targetCompatibility = JavaVersion.VERSION_1_8
+	}
+
+	tasks.withType(Jar).configureEach {
+		preserveFileTimestamps = false
+		reproducibleFileOrder = true
+	}
+}
+
+tasks.register("dist", Copy) {
+	dependsOn ":agent:jar", ":tools:jar", ":injector:packageExe"
+	group = "distribution"
+	description = "Collects the agent jar, the tooling jar and the launch scripts into dist/."
+
+	into layout.projectDirectory.dir("dist")
+	from(project(":agent").tasks.jar.archiveFile) { rename { "bridgetap-agent-${project(":agent").version}.jar" } }
+	from(project(":tools").tasks.jar.archiveFile) { rename { "bridgetap-tools-${project(":agent").version}.jar" } }
+	from("packaging")
+}

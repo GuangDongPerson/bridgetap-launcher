@@ -1,0 +1,68 @@
+dependencies {
+	implementation project(":core")
+	// Bundled, not compileOnly: the whole agent jar is appended to the bootstrap classloader search,
+	// so Hook has to be a regular entry inside this jar for the bootstrap loader to find it.
+	implementation project(":boot")
+	implementation "org.ow2.asm:asm:9.7.1"
+	implementation "org.ow2.asm:asm-tree:9.7.1"
+	// No gson here: the agent never parses JSON (only the offline `tools` module does). Shipping it
+	// put com.google.gson on the bootstrap classloader, where LinkedTreeMap$KeySet was then
+	// resolved from this jar while LinkedTreeMap came from the client's own gson-2.2.4 - a split
+	// package across two loaders, and the package-private KeySet constructor raised
+	// IllegalAccessError as soon as the client opened a screen that parses JSON.
+	compileOnly "org.lwjgl.lwjgl:lwjgl:2.9.3"
+}
+
+// Single fat jar: a java agent cannot rely on a classpath next to it, and the native payload needs
+// one self-contained file to hand to AddToBootstrapClassLoaderSearch.
+jar {
+	dependsOn ":hud:jar"
+	archiveBaseName = "bridgetap-agent"
+	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+	manifest {
+		attributes(
+			"Premain-Class": "com.bridger.compat.agent.BridgeTapAgent",
+			"Agent-Class": "com.bridger.compat.agent.BridgeTapAgent",
+			"Can-Retransform-Classes": "true",
+			"Can-Redefine-Classes": "true",
+			"Implementation-Title": "BridgeTap Compat Agent",
+			"Implementation-Version": project.version
+		)
+	}
+
+	// BSD-3-Clause requires the notice to travel with the binary, and ASM is shaded into this jar.
+	// This from() is its own source, so it is not subject to the include allow-list further down.
+	// BSD-3-Clause 要求声明随二进制一起分发，而 ASM 是以 shade 方式打进这个 jar 的。
+	// 这里的 from() 是独立来源，不受下面那段白名单 include 的限制。
+	from(rootProject.file("../licenses/ASM.txt")) {
+		into "META-INF"
+		rename { "ASM-LICENSE.txt" }
+	}
+
+	from {
+		configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+	} {
+		exclude "META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA", "module-info.class"
+		// Only our own code and ASM. This jar goes on the *bootstrap* search path, so anything else
+		// that happens to be on the compile classpath would shadow the client's copy of the same
+		// package. Keep the allow-list narrow and the failure mode cannot come back.
+		include "com/bridger/**"
+		include "org/objectweb/asm/**"
+		include "META-INF/MANIFEST.MF"
+		// The core language packs (Lang reads them with Class.getResourceAsStream("/lang/xx.properties")).
+		// They would be dropped by excludes if left off the allow-list, and at runtime t() could then
+		// only fall back to the key name.
+		// core 的语言包（Lang 用 Class.getResourceAsStream("/lang/xx.properties") 读）。
+		// 不在白名单里就会被 excludes 掉，运行时 t() 只能回退成键名。
+		include "lang/**"
+	}
+
+	// GlHud must NOT be unpacked into this jar: it would then be defined by the bootstrap loader,
+	// which cannot see the client's LWJGL. It ships as a nested resource and Bridge loads it with a
+	// URLClassLoader parented by the game loader (see Bridge.hud()).
+	from(project(":hud").tasks.jar.archiveFile) {
+		rename { "hud.jar" }
+		into "com/bridger/compat/agent"
+	}
+}

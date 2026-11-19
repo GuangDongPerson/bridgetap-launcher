@@ -1,0 +1,85 @@
+/* Base styles: reset, typography, scrollbars, focus states · 基础样式：重置、排版、滚动条、焦点态。 */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: 1.55;
+  color: var(--ink);
+  background: transparent;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  user-select: none;
+  cursor: default;
+}
+
+h1,
+h2,
+p,
+pre {
+  margin: 0;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* Keyboard reachability: focus ring only for keyboard navigation, not for mouse clicks · 键盘可达：只在键盘导航时出现焦点环，鼠标点击不出现 */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 2px;
+  border-radius: var(--r-s);
+}
+
+svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+/* Thin scrollbar, matching the reference page (track hidden by default, leaving only a pale thumb) · 细滚动条，和参考页一致（默认隐藏轨道，只留一条浅色滑块） */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--ink-4);
+  border-radius: var(--r-full);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-3);
+  background-clip: padding-box;
+}

@@ -1,0 +1,31 @@
+dependencies {
+	implementation project(":core")
+}
+
+// The harness deliberately re-creates the *shape* of an obfuscated 1.8.9 client: no readable
+// names, a singleton holder, an entity base with three doubles + on-ground flag, plus a stub of the
+// LWJGL2 class the agent hooks. No Minecraft, no GPU, no natives.
+jar {
+	archiveBaseName = "bridgetap-harness"
+	manifest {
+		attributes("Main-Class": "client.TestMain")
+	}
+}
+
+tasks.register("selfTest", JavaExec) {
+	dependsOn jar, ":agent:jar"
+	group = "verification"
+	description = "Runs the fake obfuscated client under the agent and asserts hooks fired."
+
+	workingDir = layout.buildDirectory.dir("testrun").get().asFile
+	doFirst {
+		workingDir.mkdirs()
+	}
+
+	classpath = files(tasks.jar.archiveFile) + configurations.runtimeClasspath
+	jvmArgs = [
+		"-javaagent:" + project(":agent").tasks.jar.archiveFile.get().asFile.absolutePath,
+		"-Djava.awt.headless=true"
+	]
+	mainClass = "client.TestMain"
+}

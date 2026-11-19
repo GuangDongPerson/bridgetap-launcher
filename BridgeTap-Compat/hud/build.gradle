@@ -1,0 +1,14 @@
+// Separate jar on purpose: this module is the only code that references LWJGL directly, and LWJGL
+// is visible only from the client's classloader. Bridge loads it at runtime with a URLClassLoader
+// parented by the loader that defined org.lwjgl.opengl.Display.
+//
+// It therefore depends on nothing but the JDK and LWJGL - no project classes at all. A client's
+// loader may refuse to resolve our package names (Lunar's does), so anything crossing into this jar
+// would be a ClassNotFound waiting to happen.
+dependencies {
+	compileOnly "org.lwjgl.lwjgl:lwjgl:2.9.3"
+}
+
+jar {
+	archiveBaseName = "bridgetap-hud"
+}

@@ -1,0 +1,298 @@
+/* Skeleton layout: frameless shell, title bar, backdrop layers, content column · 骨架布局：无边框外壳、标题栏、背景层、内容列。 */
+
+.shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  /* A frameless window gets no system rounding on Win10. One arc, drawn on the shell itself:
+   * the surface and the backdrop run all the way to the edge, so there is no second ring and
+   * nothing that reads as an extra border around the content.
+   * 无边框窗口在 Win10 上没有系统圆角。只在 shell 上画一条弧：表面和背景层都直接铺到边，
+   * 没有第二圈，也就不会在内容外面多出一层边框。
+   */
+  overflow: hidden;
+  border-radius: var(--r-window);
+  background: var(--shell-gradient);
+  /* A 1px inner stroke trims the edge, as before · 和原来一样，一圈内描边收边 */
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+/* Maximised: the window sits flush with the screen, so a rounded corner would show the desktop
+ * through it. The state arrives over IPC - CSS cannot detect it on its own. */
+/* 最大化时窗口贴着屏幕边，圆角会让桌面透出来。状态由 IPC 送来 —— CSS 自己判断不了。 */
+html[data-maximized="1"] .shell {
+  border-radius: 0;
+}
+
+
+/* ── Title bar · 标题栏 ─────────────────────────────────── */
+
+.titlebar {
+  position: relative;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: var(--gap-16);
+  height: 46px;
+  padding: 0 8px 0 18px;
+  flex: 0 0 auto;
+  -webkit-app-region: drag;
+}
+
+.titlebar__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+/*
+ * The mark in the title bar = the same one as the app icon: white rounded square + black bridge curve.
+ * It used to invert with the theme (black block, white line in the light theme), which did not match the white-background icon in the taskbar;
+ * now both themes keep "white block, black line", with a hairline edge in the light theme.
+ *
+ * 标题栏那个标 = 应用图标的同款：白底圆角方块 + 黑色桥形曲线。
+ * 之前是跟随主题反相（浅色主题变成黑块白线），跟任务栏里的白底图标对不上，
+ * 现在两种主题都保持"白块黑线"，浅色主题靠一圈发丝边收边。
+ */
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 9px;
+  color: #0a0a0a;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(10, 10, 10, 0.12), 0 6px 14px -8px var(--btn-halo);
+}
+
+[data-theme="dark"] .brand-mark {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18), 0 6px 14px -8px var(--btn-halo);
+}
+
+.brand-mark svg {
+  width: 17px;
+  height: 17px;
+}
+
+.brand-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.brand-tag {
+  font-size: var(--fs-tiny);
+  color: var(--ink-3);
+  padding-left: 10px;
+  border-left: 1px solid var(--line-strong);
+}
+
+/* The meta chip used to sit here and held the `margin-left: auto`; the actions row has to carry
+ * it now that the chip is gone, otherwise the window buttons drift left next to the brand.
+ * 原来靠 meta 胶囊撑开右侧，胶囊删了就得让按钮组自己顶到右边，否则会贴着品牌名。
+ */
+.titlebar__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  -webkit-app-region: no-drag;
+}
+
+.winbtn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 30px;
+  border-radius: var(--r-s);
+  color: var(--ink-2);
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+.winbtn svg {
+  width: 15px;
+  height: 15px;
+}
+
+.winbtn:hover {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.winbtn--close:hover {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+/* ── Backdrop layers · 背景层 ───────────────────────────── */
+
+.stage {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  /* Clipped by the shell, which owns the corner · 由 shell 裁切，圆角归它管 */
+  overflow: hidden;
+}
+
+/* Two glows: blue primary, purple secondary, sitting under the content like the reference page's grouped-glow · 两团辉光：蓝主、紫辅，和参考页的 grouped-glow 一样压在内容下面 */
+.stage__glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(6px);
+}
+
+.stage__glow--blue {
+  top: -22%;
+  left: 8%;
+  width: 720px;
+  height: 620px;
+  background: radial-gradient(circle at 50% 45%, var(--halo-a), transparent 66%);
+}
+
+.stage__glow--violet {
+  right: -12%;
+  bottom: -28%;
+  width: 620px;
+  height: 560px;
+  background: radial-gradient(circle at 50% 50%, var(--halo-b), transparent 68%);
+}
+
+/* Fine grid: 24px, extremely low contrast, visible only up close · 细网格：24px，极低对比，只在近处可见 */
+.stage__grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 24px 24px;
+  mask-image: radial-gradient(120% 90% at 50% 0%, #000 0%, transparent 72%);
+  -webkit-mask-image: radial-gradient(120% 90% at 50% 0%, #000 0%, transparent 72%);
+}
+
+.stage__vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(140% 110% at 50% 0%, transparent 40%, var(--vignette) 100%);
+}
+
+/* ── Content column · 内容列 ────────────────────────────── */
+
+.connect {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 6px 40px 22px;
+}
+
+.connect__header {
+  flex: 0 0 auto;
+  padding: 10px 2px 22px;
+}
+
+.eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  color: var(--accent);
+  opacity: 0.9;
+}
+
+.headline {
+  margin-top: 8px;
+  font-size: var(--fs-display);
+  line-height: 1.24;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.subhead {
+  margin-top: 10px;
+  max-width: 640px;
+  font-size: var(--fs-small);
+  color: var(--ink-2);
+}
+
+/* Toolbar: segmented control + actions on the right · 工具栏：分段控件 + 右侧操作 */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-16);
+  flex: 0 0 48px;
+  margin-bottom: 6px;
+}
+
+.toolbar__right {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-12);
+  margin-left: auto;
+}
+
+.counter {
+  font-size: var(--fs-tiny);
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.content {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.view {
+  position: absolute;
+  inset: 0;
+  display: none;
+  overflow: auto;
+  padding: 6px 2px 2px;
+}
+
+.view.is-active {
+  display: block;
+}
+
+.device-grid {
+  display: grid;
+  /* 300 rather than 320: with the status strip gone the card is ~120 tall, and at a 320 floor a
+   * 1040-wide window only fits two columns, which stretches each card into a bar.
+   * 300 而不是 320：去掉状态条后卡片只有 120 高，320 的下限会让 1040 宽的窗口只排两列，
+   * 每张卡被拉成一条横杠。 */
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--gap-16);
+  padding-bottom: 8px;
+}
+
+/* ── Footer · 底部 ──────────────────────────────────────── */
+
+.connect__footer {
+  flex: 0 0 auto;
+  padding-top: 16px;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-12);
+}
+
+.tip {
+  margin-top: 12px;
+  text-align: center;
+  font-size: var(--fs-tiny);
+  line-height: 16px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

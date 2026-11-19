@@ -1,0 +1,199 @@
+/*
+ * Motion layer.
+ *
+ * Only "how things move" lives here; there are no business decisions about "when things move" — the trigger timing is decided by scripts/ui/motion.js,
+ * which only knows scenes (idle / scanning / injecting / attached / failed) and nothing about injection details.
+ * To swap the whole motion set: replace this file + motion.js, and the injection module needs no change at all.
+ *
+ * 动效层。
+ *
+ * 这里只有"怎么动"，没有"什么时候动"的业务判断——触发时机由 scripts/ui/motion.js 决定，
+ * 而 motion.js 只认场景（idle / scanning / injecting / attached / failed），不认注入细节。
+ * 想换一套动效：替换本文件 + motion.js 即可，注入模块一行都不用改。
+ */
+
+/* ── Keyframes · 关键帧 ─────────────────────────────────── */
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes view-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ripple-out {
+  to {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes glow-breathe {
+  0%,
+  100% {
+    box-shadow: 0 10px 26px -14px var(--btn-halo), 0 0 0 0 var(--accent-soft);
+  }
+  50% {
+    box-shadow: 0 16px 40px -14px var(--btn-halo-strong), 0 0 0 10px transparent;
+  }
+}
+
+/* The reference page's breathe: the status dot breathes between 0.2 ↔ 1 · 参考页的 breathe：状态点在 0.2 ↔ 1 之间呼吸 */
+@keyframes breathe {
+  0% {
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.2;
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translateX(12px) scale(0.98);
+  }
+}
+
+/* Concentric rings of the empty state, breathing slowly · 空状态的同心圆，缓慢呼吸 */
+@keyframes ring-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.9;
+  }
+}
+
+/* ── Entrance: title → toolbar → cards, 70ms apart · 入场：标题 → 工具栏 → 卡片，错开 70ms ── */
+
+body[data-mounted="1"] .connect__header {
+  animation: rise-in 520ms var(--ease-out) both;
+}
+
+body[data-mounted="1"] .toolbar {
+  animation: rise-in 520ms var(--ease-out) both;
+  animation-delay: 70ms;
+}
+
+body[data-mounted="1"] .connect__footer {
+  animation: rise-in 520ms var(--ease-out) both;
+  animation-delay: 140ms;
+}
+
+body[data-mounted="1"] .card {
+  animation: card-in 460ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+
+.view.is-active {
+  animation: view-in 260ms var(--ease-out);
+}
+
+/* ── Runtime states · 运行期状态 ────────────────────────── */
+
+body[data-phase="scanning"] .empty__ring {
+  animation: ring-pulse 1.6s var(--ease-out) infinite;
+}
+
+body[data-phase="scanning"] .empty__ring--slow {
+  animation-delay: 240ms;
+}
+
+body[data-phase="injecting"] .card.is-selected .card__glow {
+  animation: breathe 1.8s var(--ease-out) infinite;
+}
+
+.chip--ok .dot {
+  animation: breathe 2.6s var(--ease-out) infinite;
+}
+
+.toast {
+  animation: toast-in 260ms var(--ease-out) both;
+}
+
+.toast.is-leaving {
+  animation: toast-out 200ms var(--ease-out) both;
+}
+
+/* New log line: fades in from the left, back to normal after 600ms · 新日志行：左移淡入，600ms 后回到常态 */
+.console__line.is-fresh {
+  animation: line-in 420ms var(--ease-out) both;
+}
+
+@keyframes line-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.btn.is-pressed {
+  transform: scale(0.97);
+}
+
+/* ── Accessibility: "reduce motion" · 无障碍：跟随系统"减少动态效果" ── */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

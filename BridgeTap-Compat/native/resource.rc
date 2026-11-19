@@ -1,0 +1,36 @@
+#include <winres.h>
+
+/*
+ * Resources carried by the single-file injector.
+ *
+ * The ids must match RES_AGENT / RES_HUD / RES_PAYLOAD in BridgeTap.c. Files are produced by
+ * native/pack.sh into this directory before rc.exe runs.
+ */
+1 RCDATA "agent.jar"
+2 RCDATA "hud.jar"
+3 RCDATA "payload.dll"
+
+1 VERSIONINFO
+FILEVERSION     2,6,0,0
+PRODUCTVERSION  2,6,0,0
+FILEOS          VOS_NT_WINDOWS32
+FILETYPE        VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName",      "BridgeTap"
+            VALUE "FileDescription",  "BridgeTap hot injector for Minecraft 1.8.9 clients"
+            VALUE "FileVersion",      "2.6.0.0"
+            VALUE "InternalName",     "BridgeTap"
+            VALUE "OriginalFilename", "BridgeTap.exe"
+            VALUE "ProductName",      "BridgeTap"
+            VALUE "ProductVersion",   "2.6.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

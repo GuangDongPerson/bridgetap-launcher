@@ -1,2 +1,99 @@
-# Auto detect text files and perform LF normalization
+# ---------------------------------------------------------------------------
+# BridgeTap Launcher — line-ending and binary rules (English version)
+# The complete Chinese version follows below, after two blank lines.
+# ---------------------------------------------------------------------------
+
+# Normalise text files; the rules below decide the line endings on checkout.
 * text=auto
+
+# Shell scripts must stay LF. With CRLF, Git Bash fails with
+# "$'\r': command not found" before the first command even runs.
+*.sh          text eol=lf
+*.bash        text eol=lf
+
+# Windows-native scripts keep CRLF.
+*.bat         text eol=crlf
+*.cmd         text eol=crlf
+*.ps1         text eol=crlf
+
+# Source, config and documentation are text. No eol is forced here, so the
+# repository keeps whatever the files already use.
+*.java        text
+*.c           text
+*.h           text
+*.js          text
+*.mjs         text
+*.json        text
+*.md          text
+*.css         text
+*.html        text
+*.yml         text
+*.yaml        text
+*.gradle      text
+*.properties  text
+*.py          text
+*.txt         text
+
+# Never diff, merge or convert binaries.
+*.exe         binary
+*.dll         binary
+*.jar         binary
+*.ico         binary
+*.png         binary
+*.jpg         binary
+*.jpeg        binary
+*.webp        binary
+*.woff2       binary
+*.7z          binary
+*.zip         binary
+*.bundle      binary
+
+
+# ---------------------------------------------------------------------------
+# BridgeTap 外置启动器 —— 行尾与二进制规则（中文版）
+# 以上为完整英文版，此处为完整中文版，两者规则一致。
+# ---------------------------------------------------------------------------
+
+# 统一按文本处理，具体行尾由下面的规则决定。
+* text=auto
+
+# Shell 脚本必须保持 LF。如果变成 CRLF，Git Bash 会在第一条命令前就报
+# "$'\r': command not found"。
+*.sh          text eol=lf
+*.bash        text eol=lf
+
+# Windows 原生脚本保持 CRLF。
+*.bat         text eol=crlf
+*.cmd         text eol=crlf
+*.ps1         text eol=crlf
+
+# 源码、配置与文档按文本处理。这里不强制行尾，沿用文件本身已有的写法。
+*.java        text
+*.c           text
+*.h           text
+*.js          text
+*.mjs         text
+*.json        text
+*.md          text
+*.css         text
+*.html        text
+*.yml         text
+*.yaml        text
+*.gradle      text
+*.properties  text
+*.py          text
+*.txt         text
+
+# 二进制文件不做 diff、合并，也不转换行尾。
+*.exe         binary
+*.dll         binary
+*.jar         binary
+*.ico         binary
+*.png         binary
+*.jpg         binary
+*.jpeg        binary
+*.webp        binary
+*.woff2       binary
+*.7z          binary
+*.zip         binary
+*.bundle      binary

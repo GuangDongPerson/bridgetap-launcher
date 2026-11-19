@@ -1,0 +1,8 @@
+dependencies {
+	// Provided by every 1.8.9 client at runtime; only needed to compile the GL path.
+	compileOnly "org.lwjgl.lwjgl:lwjgl:2.9.3"
+}
+
+jar {
+	archiveBaseName = "bridgetap-core"
+}

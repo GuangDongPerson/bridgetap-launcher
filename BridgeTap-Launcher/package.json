@@ -1,0 +1,25 @@
+{
+  "name": "bridgetap-launcher",
+  "productName": "BridgeTap",
+  "version": "1.0.11",
+  "private": true,
+  "description": "BridgeTap external launcher for Lunar Client / Badlion Client / vanilla 1.8.9, no Forge or Fabric required",
+  "author": "RareKoKo",
+  "license": "GPL-3.0-only",
+  "homepage": "https://github.com/GuangDongPerson/bridgetap-launcher",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GuangDongPerson/bridgetap-launcher.git"
+  },
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "fonts": "node scripts/fetch-fonts.js",
+    "dist": "node scripts/fetch-fonts.js --check && node scripts/patch-portable-nsi.js && electron-builder --win portable --x64",
+    "postinstall": "node scripts/patch-portable-nsi.js"
+  },
+  "devDependencies": {
+    "electron": "45.2.3",
+    "electron-builder": "^26.0.12"
+  }
+}

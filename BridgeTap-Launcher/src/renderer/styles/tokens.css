@@ -1,0 +1,277 @@
+/*
+ * Design tokens — monochrome, with light / dark / auto themes.
+ *
+ * Colour policy:
+ *   The UI is only black, white and grey. The accent is no longer blue but "black/white, the inverse of the surface" —
+ *   the light theme accent is pure black, the dark theme accent is pure white. Buttons, selected states and focus rings
+ *   all speak through lightness contrast, never through hue.
+ *   The only place that keeps colour is the brand colour built into the client logos (that is content, not UI decoration).
+ *
+ * Button glow values come from the MCHOSE HUB driver-ui on this machine (read from the CSS it ships):
+ *   --du-glow-hover-color:#FFFFFF / opacity 1 (light), .12 (dark)
+ *   --du-glow-hover-blur:10px
+ *   --du-glow-hover-shadow: 0 4px 27px 0 rgba(0,0,0,.06)
+ *   selected-state inner highlight: inset 0 -1px 4px rgba(255,255,255,.4), inset 0 -2px 8px rgba(255,255,255,.4)
+ *   transition .2s ease; pill 40px tall, 40px radius.
+ *   → after monochroming: light theme button = black fill with white glow, dark theme button = white fill with dark glow (same parameters, lightness inverted).
+ *
+ * 设计令牌 —— 纯黑白（monochrome）+ 浅色 / 暗色 / 自动三主题。
+ *
+ * 颜色策略：
+ *   UI 只有黑、白、灰。强调色不再是蓝色，而是"与底色相反的黑/白"——
+ *   浅色主题的强调色是纯黑，暗色主题的强调色是纯白。按钮、选中态、焦点环
+ *   全部靠明度对比说话，不靠色相。
+ *   唯一保留颜色的地方是客户端 logo 自带的品牌色（那是内容，不是界面装饰）。
+ *
+ * 按钮光效数值来自本机 MCHOSE HUB 的 driver-ui（从它打包出的 CSS 里读的）：
+ *   --du-glow-hover-color:#FFFFFF / opacity 1（浅色）、.12（暗色）
+ *   --du-glow-hover-blur:10px
+ *   --du-glow-hover-shadow: 0 4px 27px 0 rgba(0,0,0,.06)
+ *   选中态内高光: inset 0 -1px 4px rgba(255,255,255,.4), inset 0 -2px 8px rgba(255,255,255,.4)
+ *   过渡 .2s ease；胶囊高 40px、圆角 40px。
+ *   → 黑白化后：浅色主题按钮=黑底白光，暗色主题按钮=白底暗光（同一套参数按明度反相）。
+ */
+
+:root {
+  color-scheme: light;
+
+  /* ── Accent (= ink, light theme) · 强调色（= 墨色，浅色主题） ── */
+  --accent: #0a0a0a;
+  --accent-hover: #262626;
+  --accent-deep: #000000;
+  --accent-soft: rgba(10, 10, 10, 0.05);
+  --accent-ring: rgba(10, 10, 10, 0.28);
+  --on-accent: #ffffff;
+
+  /* Semantic colours collapsed to greys; lightness alone tells them apart · 语义色收敛成灰阶，只靠明度区分 */
+  --success: #0a0a0a;
+  --warning: #6b6b6b;
+  --danger: #0a0a0a;
+  --violet: #0a0a0a;
+  --violet-soft: rgba(10, 10, 10, 0.05);
+
+  /* ── Neutrals · 中性色 ──────────────────────── */
+  --bg: #f4f4f4;
+  --bg-2: #ffffff;
+  --bg-deep: #e8e8e8;
+  --surface: #ffffff;
+  --surface-2: #fafafa;
+  --surface-3: #f0f0f0;
+  --ink: #0a0a0a;
+  --ink-2: rgba(10, 10, 10, 0.64);
+  --ink-3: rgba(10, 10, 10, 0.46);
+  --ink-4: rgba(10, 10, 10, 0.26);
+  --line: rgba(10, 10, 10, 0.09);
+  --line-strong: rgba(10, 10, 10, 0.16);
+
+  /* Glass layers (chips, toolbar, toast) · 玻璃层（芯片、工具栏、Toast） */
+  --glass: rgba(255, 255, 255, 0.7);
+  --glass-strong: rgba(255, 255, 255, 0.92);
+  --glass-inset: inset 0 0 0 1px rgba(255, 255, 255, 0.6);
+
+  /* Backdrop decoration · 背景装饰 */
+  --grid-line: rgba(10, 10, 10, 0.035);
+  --halo-a: rgba(0, 0, 0, 0.055);
+  --halo-b: rgba(0, 0, 0, 0.03);
+  --vignette: rgba(232, 232, 232, 0.92);
+  --shell-gradient: linear-gradient(180deg, #ffffff 0%, var(--bg) 42%, var(--bg-deep) 100%);
+  /*
+   * Window background: what shows outside the rounded corners, because the window itself is
+   * still a rectangle. main.js parses these two lines at startup and hands the value to
+   * BrowserWindow, so the corner and the window colour cannot drift apart.
+   * 窗口底色：窗口本身还是矩形，圆角外面露出来的就是它。main.js 启动时解析这两行交给
+   * BrowserWindow，圆角与窗口底色就不会各走各的。
+   */
+  --shell-frame-light: #f4f4f4;
+  --shell-frame-dark: #0a0a0a;
+  --shell-frame: var(--shell-frame-light);
+
+  /* Console (log) · 控制台（日志） */
+  --console-bg: #0a0a0a;
+  --console-line: rgba(255, 255, 255, 0.08);
+  --console-ink: rgba(255, 255, 255, 0.78);
+  --console-ink-dim: rgba(255, 255, 255, 0.5);
+
+  /* ── Buttons (MCHOSE glow) · 按钮（MCHOSE 光效） ── */
+  --btn-bg: #0a0a0a;
+  --btn-ink: #ffffff;
+  --btn-border: rgba(0, 0, 0, 0.9);
+  --btn-glow-rgb: 255, 255, 255; /* Colour of the spot that follows the cursor · 跟随光标的光斑颜色 */
+  --btn-glow-alpha: 0.5;
+  --btn-glow-blur: 14px;
+  --btn-glow-size: 96px;
+  --btn-halo: rgba(0, 0, 0, 0.34);
+  --btn-halo-strong: rgba(0, 0, 0, 0.46);
+  --btn-inner-light: rgba(255, 255, 255, 0.4);
+  --ripple: rgba(255, 255, 255, 0.55);
+  --ripple-dark: rgba(10, 10, 10, 0.12);
+  --btn-shadow: 0 4px 27px 0 rgba(0, 0, 0, 0.06), inset 0 -1px 4px var(--btn-inner-light),
+    inset 0 -2px 8px var(--btn-inner-light);
+  --btn-shadow-hover: 0 8px 30px -6px var(--btn-halo), 0 0 48px -16px var(--btn-halo),
+    0 0 0 1px var(--btn-border), inset 0 -1px 4px var(--btn-inner-light),
+    inset 0 -2px 8px var(--btn-inner-light);
+
+  /* Soft glow inside the card that follows the pointer: it must cover the whole card, otherwise the gradient gets "cut" at the div boundary · 卡片内跟随指针的柔光：必须铺满整张卡，否则渐变会在 div 边界处"砍一刀" */
+  --card-glow: rgba(10, 10, 10, 0.055);
+  --card-glow-size: 260px;
+
+  /* ── Shadows · 阴影 ─────────────────────────── */
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.05), 0 18px 40px -30px rgba(0, 0, 0, 0.5);
+  --shadow-card-hover: 0 2px 6px rgba(0, 0, 0, 0.07), 0 28px 56px -30px rgba(0, 0, 0, 0.46);
+  --shadow-glow: 0 14px 34px -14px var(--btn-halo);
+  --shadow-glow-strong: 0 18px 44px -14px var(--btn-halo-strong);
+
+  /* ── Radii · 圆角 ───────────────────────────── */
+  --r-xs: 4px;
+  --r-s: 8px;
+  --r-m: 12px;
+  --r-l: 16px;
+  --r-xl: 20px;
+  --r-xxl: 24px;
+  --r-xxxl: 32px;
+  --r-full: 9999px;
+
+  /*
+   * The window corner. One arc only: the surface runs straight to the edge, so there is no
+   * second ring to line up with and nothing that reads as an extra border.
+   * 窗口圆角。只有一条弧：表面直接铺到边，没有第二圈要对齐，也就不会看出多余的一层边框。
+   */
+  --r-window: 12px;
+
+  /* ── Spacing · 间距 ─────────────────────────── */
+  --gap-4: 4px;
+  --gap-8: 8px;
+  --gap-12: 12px;
+  --gap-16: 16px;
+  --gap-20: 20px;
+  --gap-24: 24px;
+  --gap-32: 32px;
+  --gap-40: 40px;
+
+  /* ── Type · 字体 ────────────────────────────── */
+  /*
+   * MiSans ships with the bundle (styles/fonts.css + assets/fonts/misans/), so no locally installed copy is needed;
+   * the fallbacks below only come into play when a shard lacks a glyph (rare characters, a few symbols) — they are a net, not the main face.
+   *
+   * MiSans 随包内置（styles/fonts.css + assets/fonts/misans/），不依赖本机装没装；
+   * 后面几档只在分片里缺字（生僻字、少数符号）时才轮到，属于兜底而不是主字体。
+   */
+  --font-sans: "MiSans", "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI",
+    system-ui, sans-serif;
+  /*
+   * Monospace stack: for log body text, paths and colour codes. The first three have no CJK glyphs;
+   * MiSans is appended at the end so Chinese in the log uses the same family as the UI instead of falling back to YaHei.
+   *
+   * 等宽栈：日志正文、路径、颜色码用。前三个都没有中文字形，
+   * 末尾挂 MiSans 是为了让日志里的中文跟界面同一套字，而不是回退到雅黑。
+   */
+  --font-mono: "JetBrains Mono", "Cascadia Mono", "Consolas", "MiSans", ui-monospace, monospace;
+
+  --fs-display: 30px;
+  --fs-title: 20px;
+  /*
+   * MiSans sets a notch smaller than YaHei: the same 14px reads thin and small, so body text is raised to 14.5.
+   * The small sizes stay put — 13/12 is auxiliary information anyway, and scaling it up only crowds things.
+   *
+   * MiSans 的字面比雅黑小一圈：同样 14px 看起来偏细偏小，所以正文抬到 14.5。
+   * 小字档不动——13/12 那一档本来就是辅助信息，跟着放大反而挤。
+   */
+  --fs-body: 14.5px;
+  --fs-small: 13px;
+  --fs-tiny: 12px;
+
+  /* ── Easing (MCHOSE .2s ease) · 动效曲线（与 MCHOSE 的 .2s ease 对齐） ── */
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.32, 0.44, 1);
+  --dur-fast: 140ms;
+  --dur-base: 220ms;
+  --dur-slow: 460ms;
+}
+
+/* ── Dark theme · 暗色主题 ────────────────────────────── */
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --accent: #fafafa;
+  --accent-hover: #ffffff;
+  --accent-deep: #e4e4e4;
+  --accent-soft: rgba(255, 255, 255, 0.07);
+  --accent-ring: rgba(255, 255, 255, 0.3);
+  --on-accent: #0a0a0a;
+
+  --success: #fafafa;
+  --warning: #a8a8a8;
+  --danger: #fafafa;
+  --violet: #fafafa;
+  --violet-soft: rgba(255, 255, 255, 0.07);
+
+  --bg: #0a0a0a;
+  --bg-2: #111111;
+  --bg-deep: #050505;
+  --surface: #141414;
+  --surface-2: #191919;
+  --surface-3: #212121;
+  --ink: #fafafa;
+  --ink-2: rgba(250, 250, 250, 0.66);
+  --ink-3: rgba(250, 250, 250, 0.46);
+  --ink-4: rgba(250, 250, 250, 0.24);
+  --line: rgba(255, 255, 255, 0.09);
+  --line-strong: rgba(255, 255, 255, 0.16);
+
+  --glass: rgba(255, 255, 255, 0.045);
+  --glass-strong: rgba(255, 255, 255, 0.08);
+  --glass-inset: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+
+  --grid-line: rgba(255, 255, 255, 0.04);
+  --halo-a: rgba(255, 255, 255, 0.06);
+  --halo-b: rgba(255, 255, 255, 0.032);
+  --vignette: rgba(5, 5, 5, 0.9);
+  --shell-gradient: linear-gradient(180deg, #121212 0%, var(--bg) 46%, var(--bg-deep) 100%);
+  --shell-frame: var(--shell-frame-dark);
+
+  --console-bg: #0f0f0f;
+  --console-line: rgba(255, 255, 255, 0.08);
+  --console-ink: rgba(255, 255, 255, 0.8);
+  --console-ink-dim: rgba(255, 255, 255, 0.46);
+
+  /* Dark theme button: same glow parameters as the light theme, just a dark spot instead of a white one (not a separately tuned stronger version) · 暗色主题按钮：跟浅色主题同一套光效参数，只把白斑换成黑斑（不是另做一套加强版） */
+  --btn-bg: #fafafa;
+  --btn-ink: #0a0a0a;
+  --btn-border: rgba(255, 255, 255, 0.9);
+  --btn-glow-rgb: 10, 10, 10;
+  --btn-glow-alpha: 0.5;
+  --btn-glow-blur: 14px;
+  --btn-glow-size: 96px;
+  --btn-halo: rgba(255, 255, 255, 0.28);
+  --btn-halo-strong: rgba(255, 255, 255, 0.34);
+  --btn-inner-light: rgba(255, 255, 255, 0.7);
+  --ripple: rgba(10, 10, 10, 0.14);
+  --ripple-dark: rgba(10, 10, 10, 0.12);
+  --btn-shadow: 0 4px 27px 0 rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --btn-shadow-hover: 0 8px 30px -6px var(--btn-halo), 0 0 48px -16px var(--btn-halo),
+    0 0 0 1px var(--btn-border), inset 0 1px 0 rgba(255, 255, 255, 0.95);
+
+  --card-glow: rgba(255, 255, 255, 0.075);
+  --card-glow-size: 280px;
+
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 22px 46px -30px rgba(0, 0, 0, 0.95);
+  --shadow-card-hover: 0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    0 30px 60px -30px rgba(0, 0, 0, 0.9);
+}
+
+/* First-frame fallback: follow the system until JS writes data-theme, avoiding a white or black flash · 首帧兜底：JS 还没写 data-theme 时跟系统走，避免白闪/黑闪 */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    color-scheme: dark;
+    --bg: #0a0a0a;
+    --bg-deep: #050505;
+    --surface: #141414;
+    --ink: #fafafa;
+    --ink-2: rgba(250, 250, 250, 0.66);
+    --ink-3: rgba(250, 250, 250, 0.46);
+    --ink-4: rgba(250, 250, 250, 0.24);
+    --line: rgba(255, 255, 255, 0.09);
+    --line-strong: rgba(255, 255, 255, 0.16);
+  }
+}

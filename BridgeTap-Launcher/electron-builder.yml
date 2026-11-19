@@ -1,0 +1,82 @@
+# electron-builder configuration
+#
+# Goal: one exe, no installation, double-click and run.
+#   npm run dist  ->  dist/BridgeTap-Launcher-1.0.10.exe
+#
+# Why portable instead of nsis:
+#   nsis     writes an uninstall entry into the system and installs into Program Files — that counts
+#            as an "installation".
+#   portable is a self-extracting shell: at run time it releases the app to %TEMP%\<unpackDirName> and
+#            cleans up on exit; the shell itself is a single exe, writes no registry, needs no admin
+#            rights and no preinstalled runtime (Electron bundles Chromium + Node, so the target
+#            machine doesn't need Node).
+# electron-builder 配置
+#
+# 目标：一个 exe、免安装、双击即用。
+#   npm run dist  ->  dist/BridgeTap-Launcher-1.0.10.exe
+#
+# 为什么是 portable 而不是 nsis：
+#   nsis   会在系统里写卸载项、装到 Program Files，属于"安装"。
+#   portable 是自解压壳：运行时把 app 释放到 %TEMP%\<unpackDirName>，退出后清理，
+#             外壳本身就是一个 exe，不写注册表、不需要管理员、不需要预装运行环境
+#             （Electron 自带 Chromium + Node，目标机不用装 Node）。
+appId: com.bridgetap.launcher
+productName: BridgeTap
+copyright: Copyright © 2026 RareKoKo
+
+directories:
+  output: dist
+  buildResources: build
+
+# asar packaging: source and resources go into a single app.asar to reduce the number of released
+# files
+# asar 打包：源码与资源塞进一个 app.asar，减少释放文件数
+asar: true
+
+files:
+  - package.json
+  - src/**/*
+  # Language packs are editable resources: if they aren't packed, i18n/index.json can't be read after
+  # setup and the whole UI falls back to key names. Adding a language only means dropping one json
+  # into this directory.
+  # 语言包是可编辑资源：不打进去的话 setup 之后 i18n/index.json 读不到，
+  # 界面会全部 fallback 成键名。加一门语言只需要往这个目录丢一个 json。
+  - i18n/**/*
+  - vendor/launcher/BridgeTap.exe
+  - "!**/*.map"
+  - "!**/.DS_Store"
+
+# The launcher binary ships with the package but must be unpacked onto disk: an exe inside asar
+# cannot be executed.
+# Packaged location: resources/app.asar.unpacked/vendor/launcher/BridgeTap.exe
+# 启动器本体随包分发，但必须解包到磁盘：asar 里的 exe 不能执行。
+# 打包后位置：resources/app.asar.unpacked/vendor/launcher/BridgeTap.exe
+asarUnpack:
+  - vendor/launcher/**
+
+win:
+  target:
+    - target: portable
+      arch:
+        - x64
+  icon: build/icon.ico
+  # requireAdministrator: launching needs OpenProcess / CreateRemoteThread to open the game process,
+  # and an equally elevated process is required when the target client runs as administrator. Always
+  # require admin, see section 14 of docs/ARCHITECTURE.md.
+  # requireAdministrator：启动需要 OpenProcess / CreateRemoteThread 打开游戏进程，
+  # 目标是以管理员身份启动的客户端时必须同级权限。始终要管理员，见 docs/ARCHITECTURE.md 第 14 节。
+  requestedExecutionLevel: requireAdministrator
+  artifactName: BridgeTap-Launcher-${version}.exe
+
+portable:
+  artifactName: BridgeTap-Launcher-${version}.exe
+  # The extraction directory is not configured here: scripts/patch-portable-nsi.js rewrites the shell
+  # to %LOCALAPPDATA%\BridgeTap\app\<version>, so relaunching the same version reuses it without
+  # extracting again. The portable shell manifest also declares admin: double-click raises UAC, and
+  # the extracted app inherits the elevated token, so there is no half-baked state of "the shell is
+  # elevated but the inner process isn't".
+  # 解压目录不在这里配：scripts/patch-portable-nsi.js 会把外壳改成
+  # %LOCALAPPDATA%\BridgeTap\app\<version>，同版本再次启动直接复用，不再解压。
+  # portable 外壳的清单也声明管理员：双击就弹 UAC，解出来的 app 直接继承提权令牌，
+  # 不会出现"外壳提权了、内部进程没提权"这种半吊子状态。
+  requestExecutionLevel: admin
