@@ -34,7 +34,7 @@
 npm install # 只安装 Electron 和 Electron-builder
 npm run fonts # 获取 MiSans 字体碎片（首次运行需要，需要网络）
 npm start # 从源代码运行
-npm run dist # package → dist/BridgeTap-Injector-1.0.0.exe
+npm run dist # package → dist/BridgeTap-Injector-1.0.11.exe
 ````
 
 `npm run dist` 首先检查字体是否完整；如果缺少任何一个，它会直接失败，而不是生成没有字体的构建。
