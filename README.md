@@ -10,11 +10,11 @@ In-game screenshot (see top-left corner):
 
 [Download the latest version](https://github.com/GuangDongPerson/bridgetap-launcher/releases/latest) · [All releases](https://github.com/GuangDongPerson/bridgetap-launcher/releases) · [Changelog](CHANGELOG.md) · [Report bugs](https://github.com/GuangDongPerson/bridgetap-launcher/issues)
 
-**1.0.0** developed baseed on [sgggnnn/bridgetap](https://github.com/sgggnnn/bridgetap) 1.5.0, has all the HUD and Bridge Tracking features of this version
+**1.0.11** developed baseed on [sgggnnn/bridgetap](https://github.com/sgggnnn/bridgetap) 1.5.0, has all the HUD and Bridge Tracking features of this version
 
 ## Installation
 
-1. Open [release 1.0.0](https://github.com/GuangDongPerson/bridgetap-launcher/releases/tag/v1.0.11).
+1. Open [release 1.0.11](https://github.com/GuangDongPerson/bridgetap-launcher/releases/tag/v1.0.11).
 2. Launch *Badlion/Lunar Client* with **Java 8** or later.
 3. Wait for the launcher to detect the game process.
 4. Click the "launcher" button or Wait for the launcher to  launch automatically (if "Auto-launch" is enabled in settings)
@@ -33,7 +33,7 @@ In-game screenshot (see top-left corner):
 npm install          # only installs electron and electron-builder 
 npm run fonts        # fetch the MiSans font shards (required on first run, needs network) 
 npm start            # run from source
-npm run dist         # package → dist/BridgeTap- launcher-1.0.0.exe 
+npm run dist         # package → dist/BridgeTap- launcher-1.0.11.exe 
 ```
 
 `npm run dist` first checks that the fonts are complete; if any are missing it fails outright instead of producing a build without fonts.
