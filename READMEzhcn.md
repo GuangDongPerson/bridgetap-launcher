@@ -59,8 +59,6 @@ npm run dist # package → dist/BridgeTap-Injector-1.0.0.exe
 
 维护地址 [GuangDongPerson/bridgetap-launcher](https://github.com/GuangDongPerson/bridgetap-launcher)。感谢项目 [sgggnnn/bridgetap](https://github.com/sgggnnn/bridgetap)。
 
-BridgeTap 启动器使用 Electron、ASM 这里是 [LICENSE](licenses)。
-
 ## 许可
 
 应用程序本身：GPL-3.0，请参阅 [LICENSE](LICENSE)。
