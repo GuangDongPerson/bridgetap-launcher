@@ -10,11 +10,11 @@
 
 [下载最新版本](https://github.com/GuangDongPerson/bridgetap-launcher/releases/latest) · [所有版本](https://github.com/GuangDongPerson/bridgetap-launcher/releases) · [更新日志](CHANGELOG.md) · [报告问题](https://github.com/GuangDongPerson/bridgetap-launcher/issues)
 
-**1.0.11** 基于 [sgggnnn/bridgetap](https://github.com/sgggnnn/bridgetap) 1.5.0开发，具有该版本的所有HUD和搭路判定特性
+**1.0.12** 基于 [sgggnnn/bridgetap](https://github.com/sgggnnn/bridgetap) 1.5.0开发，具有该版本的所有HUD和搭路判定特性
 
 ## 安装
 
-1.打开[版本1.0.11](https://github.com/GuangDongPerson/bridgetap-launcher/releases/tag/v1.0.11)。  
+1.打开[版本1.0.12](https://github.com/GuangDongPerson/bridgetap-launcher/releases/tag/v1.0.12)。  
 2. 使用 **Java 8** 或更高版本启动 *Badlion/Lunar Client*。  
 3.等待启动器检测到游戏进程。  
 5. 单击“开始启动”按钮或等待启动器自动启动（需要在设置中启用“自动启动”）  
@@ -34,7 +34,7 @@
 npm install # 只安装 Electron 和 Electron-builder
 npm run fonts # 获取 MiSans 字体碎片（首次运行需要，需要网络）
 npm start # 从源代码运行
-npm run dist # package → dist/BridgeTap-Injector-1.0.11.exe
+npm run dist # package → dist/BridgeTap-Injector-1.0.12.exe
 ````
 
 `npm run dist` 首先检查字体是否完整；如果缺少任何一个，它会直接失败，而不是生成没有字体的构建。
