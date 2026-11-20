@@ -1,4 +1,4 @@
-# Bridgetap- launcher
+# Bridgetap - launcher
 
 English · [简体中文](READMEzhcn.md) · [繁體中文](READMEzhtw.md)
 
