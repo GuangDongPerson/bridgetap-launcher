@@ -41,33 +41,50 @@ const PROGRESS_INTERVAL_MS = 120;
 /**
  * Prefix proxies: `prefix + full original GitHub URL` is forwarded as-is.
  *
- * Only the three that measured well on raw / Release assets / archives / git at the same time are
- * kept; in the 2026-11 retest ghfast.top, gh.llkk.cc, bgithub.xyz and kkgithub.com all timed out —
- * don't add them back. Order is the default priority; probe results re-sort by throughput.
- *
  * 前缀式代理：`prefix + 原始 GitHub 完整 URL` 即可转发。
  *
- * 只放实测能同时吃下 raw / Release 资产 / Archive / git 的三家；2026-11 复测里
- * ghfast.top、gh.llkk.cc、bgithub.xyz、kkgithub.com 已经全部超时，不要再加回来。
- * 顺序即默认优先级，测速结果还会再按吞吐重排。
+ * 三条固定来源，不多不少。顺序即默认优先级，测速结果还会再按吞吐重排。
+ *
+ * 2026-11 实测（Release 资产 + api.github.com）：
+ *   · gh-proxy.org      —— API 直接 200、资产直接 206（认 Range），链路最短，排第一
+ *   · github.chenc.dev  —— 资产和 API 都能用，但会把 `https://` 折叠成 `https:/` 回 301，
+ *                          靠客户端自动跟随，多一跳
+ *   · ghp.keleyaa.com   —— 资产 302 到 release-assets 后可用；API 与别人共用出口 IP，
+ *                          容易撞 403 限流
  */
 const MIRRORS = [
   {
-    id: 'gh-proxy',
-    name: 'GH-Proxy',
-    host: 'gh-proxy.com',
-    prefix: 'https://gh-proxy.com/',
-    // api = also a candidate for "check for updates". All three are flagged, but in practice only
-    // gh-proxy really forwards api.github.com (one of the others answers an HTML 404, the last a
-    // 403), so it ranks first; the other two are backups — they fail fast (1~4s) and don't drag the
-    // check out, yet can take over the day they recover.
-    // api = 也参与"查更新"的候选。三条都标了，但实测只有 gh-proxy 真的转
-    // api.github.com（另外两家一个回 HTML 404、一个回 403），所以它排第一；
-    // 后面两家是后备——它们失败得很快（1~4s），不会把检查拖长，但哪天恢复了就能接上。
+    id: 'gh-proxy-org',
+    name: 'GH-Proxy.org',
+    host: 'gh-proxy.org',
+    prefix: 'https://gh-proxy.org/',
+    // api = also a candidate for "check for updates". It answers api.github.com directly with JSON,
+    // no redirect, so it ranks first.
+    // api = 也参与"查更新"的候选。它直接回 api.github.com 的 JSON、不经重定向，所以排第一。
     api: true
   },
-  { id: 'imciel', name: 'GHProxy', host: 'ghproxy.imciel.com', prefix: 'https://ghproxy.imciel.com/', api: true },
-  { id: 'ghproxy-net', name: 'GHProxy.net', host: 'ghproxy.net', prefix: 'https://ghproxy.net/', api: true }
+  {
+    id: 'chenc',
+    name: 'chenc.dev',
+    host: 'github.chenc.dev',
+    prefix: 'https://github.chenc.dev/',
+    // Redirects `/https://x` to `/https:/x` (301) before serving; Electron follows it, at the cost
+    // of one extra round trip.
+    // 会先把 `/https://x` 301 到 `/https:/x` 再服务；客户端自动跟随，代价是多一跳。
+    api: true
+  },
+  {
+    id: 'keleyaa',
+    name: 'keleyaa',
+    host: 'ghp.keleyaa.com',
+    prefix: 'https://ghp.keleyaa.com/',
+    // Shares its egress IP with other users, so api.github.com often comes back 403 (rate limit);
+    // asset downloads still work through a 302 to release-assets. Fails in under a second, so it
+    // doesn't drag the check out.
+    // 出口 IP 与他人共用，api.github.com 常回 403（限流）；资产下载走 302 到 release-assets 仍可用。
+    // 失败在 1 秒内返回，不会把检查拖长。
+    api: true
+  }
 ];
 
 /**
@@ -343,14 +360,14 @@ function probeMirror(mirror, targetUrl) {
  *   每测完一条就回调一次，用于边测边显示
  *
  * Why streaming callbacks: the three routes run in parallel and the fastest answers within a second,
- * while ghproxy.net can drag on for 10. Waiting on Promise.all means the user stares at an empty
+ * while the slowest route can drag on for 10 seconds or more. Waiting on Promise.all means the
  * list for 10 seconds — a pure loss of experience.
  *
  * 并行测所有线路，按「可用优先 → 速度降序 → 延迟升序」排序。
  * 不可用的排在后面，渲染层仍然展示，用户能看到哪条挂了。
  *
- * 为什么要流式回调：三条线路并行跑，最快的那条 1 秒就有结果，但 ghproxy.net 要
- * 拖到 10 秒。等 Promise.all 意味着用户对着空列表干等 10 秒——这是纯粹的体验损失。
+ * 为什么要流式回调：三条线路并行跑，最快的那条 1 秒就有结果，但最慢的那条可能
+ * 要 10 秒以上。等 Promise.all 意味着用户对着空列表干等——这是纯粹的体验损失。
  */
 async function probeMirrors(targetUrl, onResult) {
   if (!isGithubUrl(targetUrl)) {
@@ -609,9 +626,18 @@ async function check(options = {}) {
  */
 function downloadFile(url, dest, onProgress, prefix) {
   return new Promise((resolve, reject) => {
-    const req = net.request({ url: (prefix || '') + url });
+    // cache: false keeps Chromium's HTTP cache out of the transfer. GitHub answers the direct route
+    // with `Cache-Control: no-cache`, but every entry in MIRRORS replies `public, max-age=60` — a
+    // cached 115 MB body would be "downloaded" at disk speed, leaving a progress bar that fills in
+    // seconds while nothing crosses the network.
+    // cache: false 把 Chromium 的 HTTP 缓存彻底排除。直连时 GitHub 给的是 no-cache，但 MIRRORS
+    // 里每一条都回 `public, max-age=60`；一旦命中缓存，115 MB 就按磁盘速度"下载"完了——
+    // 进度条几秒跑满，网络上却什么都没发生。
+    const req = net.request({ url: (prefix || '') + url, cache: false });
     req.setHeader('User-Agent', UA);
     req.setHeader('Accept', 'application/octet-stream');
+    req.setHeader('Cache-Control', 'no-cache');
+    req.setHeader('Pragma', 'no-cache');
 
     let settled = false;
     let connectTimer = null;
@@ -687,11 +713,18 @@ function downloadFile(url, dest, onProgress, prefix) {
         if (settled) {
           return;
         }
+        // Fewer bytes than the advertised Content-Length means the body was cut short. The checksum
+        // would catch it as well, but only after the bar has already reached 100% — the user would
+        // read that as "download finished". Fail here so the message says truncated, not mismatch.
+        // 收到的字节少于 Content-Length 说明响应被截断。校验值当然也能拦住，但那是进度条走满
+        // 之后的事，用户已经当成"下载完成"了。在这里就失败，报的是截断而不是校验失败。
+        if (total > 0 && received !== total) {
+          fail(new Error(`truncated (${received}/${total})`));
+          return;
+        }
         settled = true;
         clearTimeout(stallTimer);
         if (onProgress) {
-          // A short body is not an error here — the checksum decides that later
-          // 少收了字节不在这里报错，交给后面的校验去判定
           onProgress(received, total || received);
         }
         resolve({ received, total });
@@ -755,8 +788,43 @@ async function download(update, onProgress, mirrorId) {
   const dir = path.join(app.getPath('temp'), 'bridgetap-update', update.version);
   fs.mkdirSync(dir, { recursive: true });
   const dest = path.join(dir, update.asset.name);
+  const logFile = path.join(app.getPath('temp'), 'bridgetap-update', 'apply.log');
 
-  await downloadFile(update.asset.url, dest, onProgress, prefix);
+  // Start from a clean slate: a leftover file from an earlier attempt must never be mistaken for
+  // this transfer's result.
+  // 从干净状态开始：上一次留下的文件绝不能被当成这次的下载结果。
+  try {
+    fs.rmSync(dest, { force: true });
+  } catch {
+    // Locked or already gone; the write below truncates it anyway
+    // 被占用或本来就不存在，下面的写入同样会截断
+  }
+
+  const startedAt = Date.now();
+  let transferred = 0;
+  appendLog(logFile, `download start route=${mirrorId || 'direct'}`);
+  let stats;
+  try {
+    stats = await downloadFile(update.asset.url, dest, (received, total) => {
+      transferred = received;
+      if (onProgress) {
+        onProgress(received, total);
+      }
+    }, prefix);
+  } catch (error) {
+    appendLog(logFile, `download failed ${error.code || ''} ${error.message} after ${transferred} bytes`);
+    try {
+      fs.rmSync(dest, { force: true });
+    } catch {
+      // Best effort
+      // 尽力而为
+    }
+    throw error;
+  }
+
+  const seconds = Math.max(0.001, (Date.now() - startedAt) / 1000);
+  appendLog(logFile, `download done ${stats.received}/${stats.total} bytes in ${seconds.toFixed(1)}s`
+    + ` (${(stats.received / 1048576 / seconds).toFixed(2)} MB/s) route=${mirrorId || 'direct'}`);
 
   let expected = update.sha;
   if (!expected && update.shaUrl) {
@@ -776,6 +844,7 @@ async function download(update, onProgress, mirrorId) {
 
   const actual = (await sha256File(dest)).toLowerCase();
   if (actual !== expected) {
+    appendLog(logFile, `checksum mismatch expected=${expected} actual=${actual}`);
     try {
       fs.unlinkSync(dest);
     } catch {
@@ -786,42 +855,123 @@ async function download(update, onProgress, mirrorId) {
     error.code = 'checksumMismatch';
     throw error;
   }
+  appendLog(logFile, `checksum ok ${actual}`);
   return { file: dest, sha: actual };
 }
 
-function psQuote(value) {
-  return "'" + String(value).replace(/'/g, "''") + "'";
+/**
+ * Append one line to the updater's own log. Best effort: a log failure must never change the
+ * outcome of an update.
+ *
+ * 往更新日志里追加一行。尽力而为：日志写不进去也不该影响更新本身。
+ */
+function appendLog(file, line) {
+  try {
+    fs.appendFileSync(file, new Date().toISOString() + ' ' + line + '\n', 'utf8');
+  } catch {
+    // Ignored on purpose
+    // 故意忽略
+  }
 }
 
 /**
- * Wait for this process to exit → back up the old exe → overwrite → start; on a failed overwrite,
- * roll back from the backup. PowerShell is invoked with -EncodedCommand (UTF-16LE + base64) so paths
- * containing Chinese don't get mangled.
+ * Builds the deferred-swap script that runs after this process is gone.
  *
- * 等本进程退出 → 备份旧 exe → 覆盖 → 启动；覆盖失败就用备份回滚。
- * PowerShell 用 -EncodedCommand（UTF-16LE + base64），路径里有中文也不会乱码。
+ * Why a helper at all: the portable shell keeps its own exe open for as long as the app runs
+ * (verified with a separate process — Windows refuses the rename with a sharing violation even
+ * though renaming a *signed* running image works). So the swap has to happen after we exit.
+ *
+ * Why it is wrapped in cmd.exe: a bare `spawn('powershell.exe', …, {detached: true})` never
+ * executed a single statement on the test machine; going through `cmd.exe /c` does. `-EncodedCommand`
+ * keeps Chinese paths intact.
+ *
+ * 生成"退出之后才执行"的替换脚本。
+ *
+ * 为什么必须有助手：便携外壳在运行期间一直占着自己的 exe（用另一个进程验证过，
+ * 重命名直接报共享冲突；而给已签名的运行中镜像改名是成功的）。所以替换只能等我们退出。
+ *
+ * 为什么外面包一层 cmd.exe：本机上裸的 `spawn('powershell.exe', …, {detached:true})`
+ * 一条语句都不会执行，经 `cmd.exe /c` 转一手就能跑。`-EncodedCommand` 保证中文路径不乱码。
  */
-function buildScript(target, file, pid) {
+function buildSwapScript(target, file, logFile) {
+  const quote = (value) => "'" + String(value).replace(/'/g, "''") + "'";
   return [
     "$ErrorActionPreference = 'Stop'",
-    `Wait-Process -Id ${pid} -Timeout 45 -ErrorAction SilentlyContinue`,
-    'Start-Sleep -Milliseconds 600',
-    `$target = ${psQuote(target)}`,
-    `$new = ${psQuote(file)}`,
+    `$log = ${quote(logFile)}`,
+    'function Note($m) { try { Add-Content -LiteralPath $log -Value ((Get-Date).ToString("HH:mm:ss.fff") + " " + $m) } catch { } }',
+    'Note "helper start"',
+    'Start-Sleep -Milliseconds 900',
+    `$target = ${quote(target)}`,
+    `$new = ${quote(file)}`,
     "$bak = $target + '.old'",
-    "Copy-Item -LiteralPath $target -Destination $bak -Force -ErrorAction SilentlyContinue",
+    'Note ("target=" + $target)',
+    '$done = $false',
+    // The shell releases the file within a second of our exit; keep trying in case it lingers.
+    // 外壳在我们退出后一秒内就会松开文件；万一慢一点也重试，而不是一次失败就放弃。
+    'for ($i = 0; $i -lt 120; $i++) {',
+    '  try {',
+    '    if (Test-Path -LiteralPath $bak) { Remove-Item -LiteralPath $bak -Force -ErrorAction SilentlyContinue }',
+    '    Move-Item -LiteralPath $target -Destination $bak -Force',
+    '    $done = $true',
+    '    break',
+    '  } catch {',
+    '    Start-Sleep -Milliseconds 500',
+    '  }',
+    '}',
+    'if (-not $done) { Note "rename failed after 60s"; exit 1 }',
+    'Note "rename ok"',
     'try {',
     '  Copy-Item -LiteralPath $new -Destination $target -Force',
+    '  Note "copy ok"',
     '} catch {',
-    '  Copy-Item -LiteralPath $bak -Destination $target -Force -ErrorAction SilentlyContinue',
+    '  Note ("copy failed: " + $_.Exception.Message)',
+    '  Move-Item -LiteralPath $bak -Destination $target -Force -ErrorAction SilentlyContinue',
+    '  exit 1',
     '}',
+    'Note "starting new build"',
     'Start-Process -FilePath $target',
     ''
   ].join('\r\n');
 }
 
 /**
- * Replace the running executable and restart.
+ * Launch the deferred helper and return whether it was started.
+ * 启动延迟替换助手，返回是否已拉起。
+ */
+function spawnSwapHelper(target, file, logFile) {
+  const script = buildSwapScript(target, file, logFile);
+  const encoded = Buffer.from(script, 'utf16le').toString('base64');
+  try {
+    const child = spawn('cmd.exe',
+      ['/c', 'powershell.exe', '-NoProfile', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded],
+      { detached: true, stdio: 'ignore', windowsHide: true });
+    child.on('error', (error) => appendLog(logFile, `helper spawn failed: ${error.code || error.message}`));
+    child.unref();
+    appendLog(logFile, `helper spawned via cmd pid=${child.pid || '(unknown)'}`);
+    return true;
+  } catch (error) {
+    appendLog(logFile, `helper spawn threw: ${error.message}`);
+    return false;
+  }
+}
+
+/**
+ * Replace the running portable exe and restart.
+ *
+ * Two paths, in this order:
+ *   1. In-process: rename the target to `.old`, copy the verified exe onto the freed path, then
+ *      `app.relaunch`. Only works when nothing holds the image.
+ *   2. Deferred: the portable shell keeps its own exe open while the app runs, so in practice the
+ *      rename above fails with EBUSY. In that case a helper is launched (via `cmd.exe /c`,
+ *      see buildSwapScript) that waits for this process to exit, retries the rename, copies the
+ *      file and starts the new build.
+ *
+ * 两条路径，按顺序尝试：
+ *   1. 进程内：把目标改名成 `.old`，把校验过的 exe 复制到腾出来的路径，再 app.relaunch。
+ *      只有没人占用镜像时才会成功。
+ *   2. 延迟替换：便携外壳在运行期间一直占着自己的 exe，所以实际运行时第 1 步基本都会 EBUSY。
+ *      这时启动一个助手（经 `cmd.exe /c`，见 buildSwapScript），等本进程退出后重试改名、
+ *      复制、拉起新版。
  *
  * @param {string} file Verified temporary exe · 已校验的临时 exe
  * @returns {{ok:boolean, error?:string}}
@@ -830,30 +980,69 @@ function apply(file) {
   if (!file || !fs.existsSync(file)) {
     return { ok: false, error: 'update file missing' };
   }
-  // The real portable path is in PORTABLE_EXECUTABLE_FILE; process.execPath is the unpacked copy in
-  // %TEMP%
-  // portable 的真实路径在 PORTABLE_EXECUTABLE_FILE；process.execPath 是 %TEMP% 里的解压副本
-  const target = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
-  if (!/\.exe$/i.test(target)) {
+  // Only a portable build knows which file to swap; running from source there is nothing to replace.
+  // 只有便携版知道自己要替换哪个文件；从源码跑没有可替换的对象。
+  const target = process.env.PORTABLE_EXECUTABLE_FILE || '';
+  if (!target || !/\.exe$/i.test(target)) {
     return { ok: false, error: 'not a portable build' };
   }
   if (path.resolve(target) === path.resolve(file)) {
     return { ok: false, error: 'same file' };
   }
 
-  const script = buildScript(target, file, process.pid);
-  const encoded = Buffer.from(script, 'utf16le').toString('base64');
+  const logDir = path.join(app.getPath('temp'), 'bridgetap-update');
+  const logFile = path.join(logDir, 'apply.log');
   try {
-    spawn('powershell.exe', ['-NoProfile', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded], {
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: true
-    }).unref();
+    fs.mkdirSync(logDir, { recursive: true });
+  } catch {
+    // Logging still works if the directory already existed; if not, applyLog swallows the failure
+    // 目录已存在时不影响；真建不出来也只是日志写不进，applyLog 会吞掉
+  }
+  appendLog(logFile, `apply() target=${target} new=${file} pid=${process.pid}`);
+
+  const backup = target + '.old';
+
+  // Fast path — only succeeds when nothing holds the image. On a normal portable launch the shell
+  // owns its own exe, this throws immediately, and the deferred helper takes over.
+  // 快路径——只有没人占着文件时才会成功。便携版正常启动时外壳占着自己的 exe，
+  // 这里会立刻抛错，随后交给延迟替换的助手。
+  try {
+    if (fs.existsSync(backup)) {
+      fs.rmSync(backup, { force: true });
+    }
+    fs.renameSync(target, backup);
+    fs.copyFileSync(file, target);
+    appendLog(logFile, `swapped in-process (${fs.statSync(target).size} bytes)`);
+    try {
+      // Drop the mutex before relaunching: the new instance asks for the same lock immediately
+      // 先松开互斥量再重启：新实例一启动就要抢同一把锁
+      app.releaseSingleInstanceLock();
+      app.relaunch({ execPath: target, args: [] });
+      appendLog(logFile, 'relaunch scheduled (in-process)');
+    } catch (error) {
+      appendLog(logFile, `relaunch failed: ${error.message}`);
+    }
+    setTimeout(() => app.quit(), 300);
+    return { ok: true };
   } catch (error) {
-    return { ok: false, error: error.message };
+    appendLog(logFile, `in-process swap blocked: ${error.code || error.message}`);
+    try {
+      if (!fs.existsSync(target) && fs.existsSync(backup)) {
+        fs.renameSync(backup, target);
+        appendLog(logFile, 'rolled back');
+      }
+    } catch {
+      appendLog(logFile, 'rollback skipped');
+    }
   }
 
-  setTimeout(() => app.quit(), 400);
+  // Normal path: the file stays locked until this process is gone, so let the helper finish it.
+  // 常规路径：本进程退出前文件一直锁着，交给助手在退出后完成。
+  if (!spawnSwapHelper(target, file, logFile)) {
+    return { ok: false, error: 'could not start the update helper' };
+  }
+  appendLog(logFile, 'quitting, the helper will finish the swap');
+  setTimeout(() => app.quit(), 300);
   return { ok: true };
 }
 

@@ -52,7 +52,7 @@ ROOT_FILES = [
 # Any path segment equal to one of these is pruned
 # 路径里出现这些目录名就整枝跳过
 SKIP_DIRS = {
-    'node_modules', 'dist', '.gradle', '.git', 'snapshots',
+    'node_modules', 'dist', 'dist-test', '.gradle', '.git', 'snapshots',
     '.tools', '.pack', '.workbuddy', '__pycache__', 'build',
 }
 

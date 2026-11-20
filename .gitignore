@@ -8,6 +8,7 @@ node_modules/
 
 # Electron build output, installers and intermediate packages
 BridgeTap-Launcher/dist/
+BridgeTap-Launcher/dist-test/
 BridgeTap-Launcher/release/
 dist/
 release/
@@ -76,6 +77,7 @@ node_modules/
 
 # Electron 构建产物、安装包与中间文件
 BridgeTap-Launcher/dist/
+BridgeTap-Launcher/dist-test/
 BridgeTap-Launcher/release/
 dist/
 release/

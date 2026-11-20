@@ -1,7 +1,7 @@
 {
   "name": "bridgetap-launcher",
   "productName": "BridgeTap",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "private": true,
   "description": "BridgeTap external launcher for Lunar Client / Badlion Client / vanilla 1.8.9, no Forge or Fabric required",
   "author": "RareKoKo",
