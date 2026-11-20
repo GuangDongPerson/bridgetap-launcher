@@ -17,7 +17,7 @@ In-game screenshot (see top-left corner):
 1. Open [release 1.0.12](https://github.com/GuangDongPerson/bridgetap-launcher/releases/tag/v1.0.12).
 2. Launch *Badlion/Lunar Client* with **Java 8** or later.
 3. Wait for the launcher to detect the game process.
-4. Click the "launcher" button or Wait for the launcher to  launch automatically (if "Auto-launch" is enabled in settings)
+4. Click the "launch" button or Wait for the launcher to  launch automatically (if "Auto-launch" is enabled in settings)
 5. Do /bt in game process to make sure the launch takes effect.
 6. Enjoy. **:D**
 
