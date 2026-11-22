@@ -58,7 +58,20 @@ const APP_DEFAULTS = {
    * Countdown length in seconds.
    * 倒计时长度（秒）
    */
-  autoInjectDelaySec: 5,
+  autoInjectDelaySec: 20,
+  /**
+   * Run the launcher in the background (tray only) when Windows starts.
+   *
+   * <p>Stored here, but the OS side is a scheduled task, not this file — see `autostart.js`. The two
+   * are kept in step by the IPC handler that owns writes: a value that the task could not be made to
+   * match is rolled back rather than left lying.
+   *
+   * 开机时在后台（仅托盘）运行启动器。
+   *
+   * <p>存在这里，但系统那一侧是计划任务而非这个文件——见 `autostart.js`。两者由写入方（IPC 处理函数）
+   * 保持一致：注册不上就回滚，不留一个说一套做一套的值。
+   */
+  launchOnStartup: false,
   /**
    * UI language: auto = follow the system locale; anything else is a code listed in i18n/index.json.
    * 界面语言：auto = 跟系统区域走；其余是 i18n/index.json 里的 code
@@ -80,13 +93,85 @@ function appSettingsPath() {
   return path.join(app.getPath('userData'), 'settings.json');
 }
 
-function readAppSettings() {
-  try {
-    const raw = JSON.parse(fs.readFileSync(appSettingsPath(), 'utf8'));
-    return { ...APP_DEFAULTS, ...raw };
-  } catch {
-    return { ...APP_DEFAULTS };
+/**
+ * Schema version of the file on disk.
+ *
+ * <p>A default change alone cannot reach an existing install: `writeAppSettings` writes the whole
+ * object, so every user who ever touched a launcher setting has the *old* default frozen in their
+ * file. When the shipped default changes meaningfully, bump this and add a step to `migrate`.
+ *
+ * 磁盘上文件的结构版本。
+ *
+ * <p>只改默认值影响不到已安装的用户：`writeAppSettings` 每次都写整个对象，所以任何动过启动器设置的
+ * 用户，文件里都冻结着**旧的**默认值。默认值有实质变化时就升这个号，并在 `migrate` 里加一步。
+ */
+const APP_SCHEMA = 2;
+
+/** Guard so a read-only config directory doesn't retry the migration on every read. */
+/** 防止配置目录只读时每次读取都重试迁移。 */
+let migrationAttempted = false;
+
+/**
+ * Bring an older file up to `APP_SCHEMA`.
+ *
+ * <p>Deliberately narrow: a value is rewritten only when it still equals the *previous* default, so a
+ * user who picked something else keeps their choice. That is the whole reason these are written as
+ * "was 5, now 20" rather than "force to 20".
+ *
+ * 把旧文件升级到 `APP_SCHEMA`。
+ *
+ * <p>刻意保守：只有当某个值仍等于**上一个**默认值时才改写，用户选过别的值就保留他的选择。这也是这里
+ * 写成"原来 5、现在 20"而不是"强制 20"的全部理由。
+ */
+function migrate(next, from) {
+  if (from < 2) {
+    // 1 → 2: the auto-inject countdown shipped as 5 s; 5 s turned out too short for a client that is
+    // still loading its world, so the default became 20 s.
+    // 1 → 2：自动启动倒计时原来的默认是 5 秒；5 秒对一个还在加载世界的客户端太短，默认改成 20 秒。
+    if (Number(next.autoInjectDelaySec) === 5) {
+      next.autoInjectDelaySec = APP_DEFAULTS.autoInjectDelaySec;
+    }
   }
+  next.schema = APP_SCHEMA;
+}
+
+/**
+ * Write the whole object without going through `writeAppSettings`.
+ *
+ * <p>`writeAppSettings` starts by calling `readAppSettings`, which is what triggers the migration —
+ * calling it here would recurse.
+ *
+ * 直接写整个对象，不走 `writeAppSettings`。
+ *
+ * <p>`writeAppSettings` 开头就调 `readAppSettings`，而那正是触发迁移的地方——在这里调它会递归。
+ */
+function persistQuietly(next) {
+  try {
+    fs.mkdirSync(path.dirname(appSettingsPath()), { recursive: true });
+    fs.writeFileSync(appSettingsPath(), JSON.stringify(next, null, 2), 'utf8');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function readAppSettings() {
+  let raw;
+  try {
+    raw = JSON.parse(fs.readFileSync(appSettingsPath(), 'utf8'));
+  } catch {
+    // No file (or unreadable): fresh installs get today's defaults and no migration
+    // 没有文件（或读不出来）：全新安装直接用今天的默认值，不需要迁移
+    return { ...APP_DEFAULTS, schema: APP_SCHEMA };
+  }
+  const next = { ...APP_DEFAULTS, ...raw };
+  const from = Number(raw && raw.schema);
+  if ((!Number.isFinite(from) || from < APP_SCHEMA) && !migrationAttempted) {
+    migrationAttempted = true;
+    migrate(next, Number.isFinite(from) ? from : 1);
+    persistQuietly(next);
+  }
+  return next;
 }
 
 function writeAppSettings(patch) {
@@ -96,6 +181,7 @@ function writeAppSettings(patch) {
   next.autoInject = next.autoInject === true || next.autoInject === 'true';
   next.autoUpdateCheck = next.autoUpdateCheck === true || next.autoUpdateCheck === 'true';
   next.useMirrorCheck = next.useMirrorCheck === true || next.useMirrorCheck === 'true';
+  next.launchOnStartup = next.launchOnStartup === true || next.launchOnStartup === 'true';
   const delay = Math.round(Number(next.autoInjectDelaySec));
   next.autoInjectDelaySec = Number.isFinite(delay)
     ? Math.min(120, Math.max(1, delay))
@@ -205,9 +291,26 @@ const MOD_FIELDS = [
     { value: 'Z', labelKey: 'mod.preferredAxis.opt.Z' },
     { value: 'X', labelKey: 'mod.preferredAxis.opt.X' }
   ] },
-  { key: 'hudScale', labelKey: 'mod.hudScale.label', type: 'range', hintKey: 'mod.hudScale.hint', min: 0.5, max: 2, step: 0.05 },
-  { key: 'hudX', labelKey: 'mod.hudX.label', type: 'number', min: 0, max: 4000, step: 1, unit: 'px' },
-  { key: 'hudY', labelKey: 'mod.hudY.label', type: 'number', min: 0, max: 2160, step: 1, unit: 'px' },
+  // `defaultValue` matters: without it a freshly created config gets the slider minimum (0.5), while
+  // the agent's own default is 1.0 — the HUD would come up half-size after the first write from the stick.
+  // `defaultValue` 不能省：缺了它，新建的配置文件会拿到滑块下限 0.5，而 agent 自己的默认是 1.0——
+  // 走一次摇杆写入，HUD 就会缩成一半。
+  { key: 'hudScale', labelKey: 'mod.hudScale.label', type: 'range', hintKey: 'mod.hudScale.hint', min: 0.5, max: 2, step: 0.05, defaultValue: '1' },
+  // Percent of the free travel (canvas minus the panel's own width/height), not pixels and not raw
+  // canvas percent: 0 = flush left/top, 100 = flush right/bottom, 50 = centred, and every value in
+  // between is reachable without the panel jumping when it passes the midpoint.
+  //
+  // No `hintKey` on either row: they sit directly under the stick row, and three stacked lines of
+  // grey text were louder than the values they were meant to explain. The 0 / 100 / 50 meaning is
+  // documented here and in ARCHITECTURE.md instead of on screen.
+  //
+  // 画布"可移动余量"（扣掉面板自身宽高）的百分比，不是像素、也不是裸的画布百分比：
+  // 0 = 贴左/上，100 = 贴右/下，50 = 居中；中间每个值都到得了，跨过中点也不会跳。
+  //
+  // 这两行都不挂 `hintKey`：它们紧跟在摇杆行下面，连着三行灰字比它们要解释的数值还吵。
+  // 0/100/50 的含义记在这里和 ARCHITECTURE.md，不放到界面上。
+  { key: 'hudXPercent', labelKey: 'mod.hudX.label', type: 'number', min: 0, max: 100, step: 0.1, unit: '%', defaultValue: '1.6' },
+  { key: 'hudYPercent', labelKey: 'mod.hudY.label', type: 'number', min: 0, max: 100, step: 0.1, unit: '%', defaultValue: '2.8' },
   { key: 'backgroundEnabled', labelKey: 'mod.backgroundEnabled.label', type: 'switch' },
   { key: 'textShadow', labelKey: 'mod.textShadow.label', type: 'switch' },
   { key: 'showReadyNotice', labelKey: 'mod.showReadyNotice.label', type: 'switch' },
@@ -215,9 +318,18 @@ const MOD_FIELDS = [
   { key: 'showGainType', labelKey: 'mod.showGainType.label', type: 'switch' },
   { key: 'gainText', labelKey: 'mod.gainText.label', type: 'text', placeholder: 'Gain', maxLength: 24 },
   { key: 'noGainText', labelKey: 'mod.noGainText.label', type: 'text', placeholder: 'No Gain', maxLength: 24 },
-  { key: 'chatOutput', labelKey: 'mod.chatOutput.label', type: 'switch' },
-  { key: 'tickOffset', labelKey: 'mod.tickOffset.label', type: 'number', hintKey: 'mod.tickOffset.hint', min: -40, max: 40, step: 1, unit: 't' },
-  { key: 'plateTickOffset', labelKey: 'mod.plateTickOffset.label', type: 'number', hintKey: 'mod.plateTickOffset.hint', min: -40, max: 40, step: 1, unit: 't' },
+  // These three carry an explicit `defaultValue` because the table's fallbacks disagree with the
+  // agent: a switch with no default reads as `true`, and a number with no default reads as `min`
+  // (here -40). Both are wrong for these keys, and the launcher writes its defaults straight into
+  // the client's properties file — so the launcher's fallback silently overrode the agent's own
+  // `chatOutput = false` / `tickOffset = 0` / `plateTickOffset = 0` on every fresh config.
+  // 这三行必须显式给 `defaultValue`，因为表里的兜底与 agent 不一致：开关没有默认时读作 `true`，
+  // 数字没有默认时读作 `min`（这里是 -40）。两者对这些键都是错的，而且启动器会把自己的默认值
+  // 直接写进客户端的 properties 文件——于是一个新配置上，启动器的兜底悄悄覆盖了 agent 自己的
+  // `chatOutput = false` / `tickOffset = 0` / `plateTickOffset = 0`。
+  { key: 'chatOutput', labelKey: 'mod.chatOutput.label', type: 'switch', defaultValue: 'false' },
+  { key: 'tickOffset', labelKey: 'mod.tickOffset.label', type: 'number', hintKey: 'mod.tickOffset.hint', min: -40, max: 40, step: 1, unit: 't', defaultValue: '0' },
+  { key: 'plateTickOffset', labelKey: 'mod.plateTickOffset.label', type: 'number', hintKey: 'mod.plateTickOffset.hint', min: -40, max: 40, step: 1, unit: 't', defaultValue: '0' },
   { key: 'turnTicks', labelKey: 'mod.turnTicks.label', type: 'segmented', options: [
     { value: '12', labelKey: 'mod.turnTicks.opt.12' },
     { value: '15', labelKey: 'mod.turnTicks.opt.15' }
@@ -230,6 +342,73 @@ const MOD_FIELDS = [
 ];
 
 const FIELD_BY_KEY = new Map(MOD_FIELDS.map((field) => [field.key, field]));
+
+/**
+ * Runtime hint written by the launcher for the agent, in the same file because that is the only
+ * channel it reads.
+ *
+ * <p>It is not a setting: never listed in the UI, never defaulted, never echoed back. The value is
+ * epoch milliseconds until which the agent should poll the file every 50 ms (`0` = idle). The HUD
+ * stick refreshes it while the player drags and drops it when the gesture ends, which is how the
+ * agent switches cadence mid-session — no socket, no second file, no timer on the agent side.
+ *
+ * 启动器写给 agent 的运行时提示，走同一个文件（agent 只读这一个通道）。
+ *
+ * <p>它不是设置：界面不列、不给默认值、不回显。值是 epoch 毫秒：到这一刻之前 agent 每 50ms 读一次
+ * 文件（`0` = 空闲）。摇杆拖动期间不断刷新，手势结束时撤销——agent 就是这样在会话中切换节奏，
+ * 不需要 socket、不需要第二个文件、agent 侧也不用定时器。
+ */
+const STICK_LEASE_KEY = 'hudStickUntil';
+
+/**
+ * Only a plain non-negative integer makes it into the file; anything else means idle.
+ *
+ * 只有非负整数会写进文件，其余一律当空闲。
+ */
+function coerceLease(raw) {
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) {
+    return '0';
+  }
+  return String(Math.round(value));
+}
+
+/**
+ * Rows that are buttons rather than settings: they open a panel and store nothing.
+ *
+ * <p>They deliberately stay out of MOD_FIELDS, because that array drives reading, writing and the
+ * defaults — putting them there would make the writer emit a `hudJoystick=0` line the agent has no
+ * idea what to do with, and would also hand the renderer a bogus value. The display list below
+ * splices them back in at the position the UI wants.
+ *
+ * 只弹面板、不存值的按钮行。
+ *
+ * <p>它们刻意不进 MOD_FIELDS：那张表同时决定读取、写入和默认值，塞进去会让写入端多出一行
+ * agent 看不懂的 `hudJoystick=0`，还会给渲染层一个假值。下面那张展示清单再把它们插回该在的位置。
+ */
+const MOD_ACTION_FIELDS = [
+  // Scale first, then the stick, then the two exact percentages — coarse to fine, top to bottom.
+  // 先缩放、再摇杆、最后是两个精确百分比——从上到下由粗到细。
+  {
+    key: 'hudJoystick',
+    labelKey: 'mod.hudJoystick.label',
+    actionLabelKey: 'mod.hudJoystick.action',
+    type: 'action',
+    action: 'hudJoystick'
+  }
+];
+
+/**
+ * The list the settings page draws: persisted fields plus the action rows, in display order.
+ *
+ * 设置页实际绘制的清单：持久化字段 + 动作行，按显示顺序排好。
+ */
+const FIELDS_FOR_UI = (() => {
+  const list = [...MOD_FIELDS];
+  const anchor = list.findIndex((field) => field.key === 'hudScale');
+  list.splice(anchor < 0 ? list.length : anchor + 1, 0, ...MOD_ACTION_FIELDS);
+  return list;
+})();
 
 /**
  * Convert a value coming from the UI into the string written to the file, per the field table.
@@ -522,7 +701,7 @@ function readModSettings(options = {}) {
   const resolved = resolveModConfig(options);
   const configPath = resolved.path;
   const paths = knownConfigPaths(configPath);
-  const base = { fields: MOD_FIELDS, source: resolved.source, paths };
+  const base = { fields: FIELDS_FOR_UI, source: resolved.source, paths };
   if (!configPath) {
     return {
       ...base,
@@ -608,6 +787,12 @@ function writeModSettings(patch, target = {}) {
   const updates = new Map();
   try {
     for (const [key, raw] of Object.entries(patch || {})) {
+      // The stick lease is not a field: it passes through untouched by the field table
+      // 摇杆租约不是字段：不经过字段表，单独放行
+      if (key === STICK_LEASE_KEY) {
+        updates.set(key, coerceLease(raw));
+        continue;
+      }
       const field = FIELD_BY_KEY.get(key);
       if (!field) {
         // Ignore unknown keys; don't turn a UI bug into dirty data
@@ -643,6 +828,25 @@ function writeModSettings(patch, target = {}) {
     for (const [key, value] of updates) {
       map.set(key, value);
     }
+    // The pixel pair is gone from the field list; drop it from the file too, so what is on disk
+    // matches what the panel shows. The agent migrates it once, on the first read, and never looks
+    // at it again — leaving it behind would just be a second, contradictory source of truth.
+    // 像素那一对已经从字段表里去掉了，文件里也一并删掉，让磁盘上的内容和面板显示的一致。
+    // agent 只在第一次读取时迁移一次，之后再也不看它——留着就是第二个自相矛盾的来源。
+    if (updates.has('hudXPercent')) {
+      map.delete('hudX');
+    }
+    if (updates.has('hudYPercent')) {
+      map.delete('hudY');
+    }
+    // The lease must not outlive the gesture that set it. Any ordinary write drops the line, so a
+    // launcher killed mid-drag cannot leave the agent behind polling at 20 Hz for the rest of the
+    // session. (The agent caps the lease at a minute as well — two independent guards.)
+    // 租约不能比设置它的手势活得久。任何普通写入都会删掉这一行，所以启动器在拖动中崩掉也不会让
+    // agent 在剩下的会话里一直跑 20Hz。（agent 侧也把租约压到最多一分钟——两道独立的保险。）
+    if (!updates.has(STICK_LEASE_KEY)) {
+      map.delete(STICK_LEASE_KEY);
+    }
     try {
       fs.mkdirSync(path.dirname(configPath), { recursive: true });
       const temp = configPath + '.injector.tmp';
@@ -664,10 +868,20 @@ function writeModSettings(patch, target = {}) {
 
 module.exports = {
   MOD_FIELDS,
+  // The list the renderer draws (persisted fields plus action rows). Exported so a test can assert
+  // the order — the stick has to sit between HUD scale and HUD X — without opening a window.
+  // 渲染层要画的清单（持久化字段 + 动作行）。导出是为了让测试能断言顺序——
+  // 摇杆必须夹在 HUD 缩放和横向位置之间——而不必真的开一个窗口。
+  FIELDS_FOR_UI,
   readAppSettings,
   writeAppSettings,
   readModSettings,
   writeModSettings,
   modConfigPath,
-  appSettingsPath
+  appSettingsPath,
+  // Whoever has to touch every config file at once — the uninstaller does, to delete them — needs
+  // the same list the settings writer uses. Exporting it keeps the candidate rules in one place.
+  // 需要一次性处理所有配置文件的地方（卸载要删它们）得用与设置写入同一份清单。
+  // 导出来能让候选规则只留在一处。
+  knownConfigPaths
 };

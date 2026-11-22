@@ -1,0 +1,15 @@
+{
+  "name": "vanilla-1.8.9",
+  "sourceJar": "minecraft-1.8.9-client.jar",
+  "minecraftClass": "ave",
+  "playerField": "h",
+  "playerType": "bew",
+  "entityClass": "pk",
+  "xField": "s",
+  "yField": "t",
+  "zField": "u",
+  "setterMethod": "b",
+  "setterDesc": "(DDD)V",
+  "tickMillis": 50,
+  "hookedMethod": "org/lwjgl/opengl/Display.update()V"
+}

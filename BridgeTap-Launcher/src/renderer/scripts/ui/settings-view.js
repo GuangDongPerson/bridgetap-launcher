@@ -106,6 +106,24 @@ function rangeControl(field, value, onChange) {
   return wrap;
 }
 
+/**
+ * Action row: a button that opens a panel instead of editing a value.
+ *
+ * <p>Nothing is stored for these rows, so no value is ever handed back — pressing the button only
+ * reports the row itself and lets app.js decide what to open.
+ *
+ * 动作行：只负责打开一个面板的按钮，不编辑任何值。
+ *
+ * <p>这类行不存值，所以永远不回报数值——按下按钮只把这一行本身交出去，由 app.js 决定打开什么。
+ */
+function actionControl(field, onAction) {
+  const button = el('button', 'ghost ghost--tiny', t(field.actionLabelKey || field.labelKey));
+  button.type = 'button';
+  button.dataset.action = field.action || field.key;
+  button.addEventListener('click', () => onAction(field, button));
+  return button;
+}
+
 function numberControl(field, value, onChange) {
   const wrap = el('div', 'num');
   const input = el('input', 'num__input');
@@ -329,8 +347,9 @@ function colorSection(fields, values, onChange) {
  * @param {Array} fields field table from the main process · 主进程给的字段表
  * @param {Record<string,string>} values
  * @param {(key:string, value:unknown)=>void} onChange
+ * @param {(field:object, trigger:HTMLElement)=>void} [onAction] Called by `action` rows · `action` 行按下时回调
  */
-export function renderModSettings(host, fields, values, onChange) {
+export function renderModSettings(host, fields, values, onChange, onAction) {
   host.replaceChildren();
   // Colour items get their own section; the main list no longer lays out 8 dropdowns
   // 颜色项单独一个分区，主列表里不再铺 8 个下拉
@@ -339,7 +358,13 @@ export function renderModSettings(host, fields, values, onChange) {
   for (const field of plainFields) {
     const { wrap, control } = row(field);
     const value = values ? values[field.key] : undefined;
-    if (field.type === 'switch') {
+    if (field.type === 'action') {
+      control.append(actionControl(field, (rowField, trigger) => {
+        if (onAction) {
+          onAction(rowField, trigger);
+        }
+      }));
+    } else if (field.type === 'switch') {
       control.append(switchControl(value, (next) => onChange(field.key, next)));
     } else if (field.type === 'segmented') {
       control.append(segmentedControl(field, value, (next) => onChange(field.key, next)));
@@ -365,10 +390,10 @@ export function renderModSettings(host, fields, values, onChange) {
  * 画注入器设置。
  * @param {HTMLElement} host
  * @param {{logLines:number, theme:{mode:string}, modPath:string|null, version:string,
- *          autoInject:boolean, autoInjectDelaySec:number}} state
+ *          autoInject:boolean, autoInjectDelaySec:number, launchOnStartup:boolean}} state
  * @param {{onLogLines:(n:number)=>void, onTheme:(mode:string)=>void, onRelocate:()=>void,
  *          onOpenFolder:(which:string)=>void, onAutoInject:(on:boolean)=>void,
- *          onAutoInjectDelay:(seconds:number)=>void}} actions
+ *          onAutoInjectDelay:(seconds:number)=>void, onLaunchOnStartup:(on:boolean)=>void}} actions
  */
 export function renderAppSettings(host, state, actions) {
   host.replaceChildren();
@@ -414,6 +439,15 @@ export function renderAppSettings(host, state, actions) {
     actions.onLogLines
   ));
   host.append(logRow.wrap);
+
+  // Launch at startup
+  // 开机自启
+  const startupRow = row({ key: 'launchOnStartup', labelKey: 'injector.launchOnStartup.label' });
+  startupRow.control.append(switchControl(
+    state.launchOnStartup ? 'true' : 'false',
+    (next) => actions.onLaunchOnStartup(next)
+  ));
+  host.append(startupRow.wrap);
 
   // Auto update check (a manual entry sits on the right)
   // 自动检查更新（右边留一个手动入口）

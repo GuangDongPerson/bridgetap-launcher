@@ -403,10 +403,70 @@ All checks passed / 全部通过
 
 ---
 
+## 2026-11-21 · injector-side fix: no run before the first placement / 注入器侧修正：首个方块之前不开局
+
+**Not an upstream sync.** Upstream starts a run only from `PlayerControllerMP.onPlayerRightClick`
+returning true for an `ItemBlock`, so it never had this bug. The injector reaches the same signal
+through a bytecode hook that may not install, so it kept a fallback — and the fallback was gated on
+the wrong question. Recorded here because it changes what "a run starts" means, which is the class
+of change this document exists to track.
+
+**这不是上游同步。** 上游只在 `PlayerControllerMP.onPlayerRightClick` 对 `ItemBlock` 返回 true 时
+开局，从来不会有这个 bug。注入器靠字节码钩子拿同一个信号，而钩子可能装不上，于是留了一条兜底
+——而兜底的判据问错了问题。记在这里是因为它改变了「什么算开局」，而这正是本文档要追踪的那类改动。
+
+| # | Root cause / 根因 | Where / 位置 | Note / 说明 |
+|---|---|---|---|
+| 1 | The take-off fallback was gated on `!blockHookSeen`, i.e. "the hook has not fired yet", not "the hook is not installable" / 兜底以 `!blockHookSeen` 为条件，即「钩子还没触发过」，而不是「钩子装不上」 | `Bridge.tick` | Both are true between world join and the first right-click, so a bare jump opened a run, the void fall closed it as `FAILED`, and the next jump opened another — repeating until a block was actually placed / 从进世界到第一次右键之间两者都为真，于是裸跳就开局、掉虚空判失败、下一跳再开，循环到真的放下一块为止 |
+| 2 | The fallback called `onBlockPlaced()`, which records `PlacementEvidence` unconditionally / 兜底调 `onBlockPlaced()`，而它无条件记录 `PlacementEvidence` | `Tracker.onBlockPlaced` | That credited the label gates with a block that was never placed, so a bare jump could earn a `1.0 Flat` / 等于给标签门控补了一块从没放过的方块，裸跳因此能拿 `1.0 Flat` |
+| 3 | Nothing held "the first block has been placed" as state / 没有任何地方把「首个方块已放置」当作状态 | `Tracker` | `PlacementEvidence` only records events; it deliberately holds no boolean, so no gate could consult one / `PlacementEvidence` 只记事件，刻意不持有布尔，所以没有门能查它 |
+
+### What changed / 改了什么
+
+| File / 文件 | Change / 改动 |
+|---|---|
+| `Tracker` | New `takeOffMayStart` (default `false`) and `firstPlacementSeen`; new entry point `onTakeOff()`; the three placement entry points converge on one private `onPlacement(blockX, blockZ, hasBlockColumn, isPlacement)`; `onJump()` refuses to record while `!firstPlacementSeen`; `startRun` / `reset` / `onWorldChange` all clear the flag / 新增 `takeOffMayStart`（默认 false）与 `firstPlacementSeen`；新增入口 `onTakeOff()`；三个放置入口收敛到一个私有 `onPlacement(...)`；`onJump()` 在未放置前拒绝记录；三处复位都清标志 |
+| `Bridge` | New `blockHookAbsent`, fed by `Bootstrap` from the injection table instead of inferred from hook activity; the fallback now calls `Tracker.onTakeOff()`; `blockHookSeen` demoted to a first-fire log line / 新增 `blockHookAbsent`，由 `Bootstrap` 从注入表给出而非从钩子活跃度反推；兜底改调 `Tracker.onTakeOff()`；`blockHookSeen` 降级为首触日志 |
+| `Bootstrap` | `setControllerHookPresent` reported twice: from `resolveTargets()` when there is no controller class at all, and from `inject()` after `presentSites` — before the early return, because "nothing matched" is precisely the case that matters / 两处上报：`resolveTargets()` 里根本没有控制器类时，以及 `inject()` 里 `presentSites` 之后、提前 return 之前——「一个都没匹配上」恰恰是关键情形 |
+
+### Why the two booleans are separate / 为什么两个布尔必须分开
+
+`hasBlockColumn` answers "which column did the block go to"; `isPlacement` answers "was this a
+placement at all". Merging them was the first attempt and it broke every client whose controller
+does not expose the `BlockPos`: those clients call `onBlockPlaced()` for a real placement, and a
+merged flag rejected them, so no run could ever start. `tests/run.sh` section 3 caught it
+immediately (`entries 0`, expected 1).
+
+`hasBlockColumn` 回答「方块落在哪一列」；`isPlacement` 回答「这到底是不是一次放置」。合并两者是
+最初的写法，它把所有「控制器报不出 `BlockPos`」的客户端全废了：那些客户端对真放置调的是
+`onBlockPlaced()`，合并后的标志把它们一起拒了，于是一局都开不起来。`tests/run.sh` 的 section 3
+当场就抓到了（`entries 0`，期望 1）。
+
+### Verification / 验证
+
+```
+$ bash tests/run.sh                      # excerpt · 节选
+[20]  no run before the first placement · 首个方块之前不开局
+      jump #1..#3 after world join do not start a run · 进世界后第 1..3 次跳跃不开局   IDLE
+      no entries from bare jumping · 裸跳不产生任何条目                                0
+      clock never started · 计时没有开始                                               0.0
+      the first placement opens the run · 首次放置开局                                  BRIDGING
+[20b] take-off as a fallback still waits for a block · 起跳兜底也要等方块
+      a take-off may open the run · 起跳可以开局                                       BRIDGING
+      but it is not a placement · 但起跳不算放置                                       false
+      the void fall fails the run · 掉虚空判失败                                       FAILED
+      the next take-off does not restart it · 下一次起跳不重开                          FAILED
+[20c] reset clears the placement precondition · reset 清掉放置前置                   false
+All checks passed / 全部通过        # 219 assertions · 219 条断言
+```
+
+---
+
 ## Baseline record / 基线记录
 
 | Sync time / 同步时间 | Injector version / 注入器版本 | Upstream version / 上游版本 | Upstream commit / 上游 commit | Notes / 说明 |
 |---|---|---|---|---|
+| 2026-11-21 | 1.0.19-preview | 1.5.0 | `5c9306d` | Injector-side fix only, no upstream change: a run can no longer start before the first placement, and a take-off no longer counts as placement evidence (see the section above) / 仅注入器侧修正，无上游改动：首个方块之前不再开局，起跳不再算作放置证据（见上一节） |
 | 2026-11-12 | 1.4.1 | 1.5.0 | `5c9306d` | Head hitter sits after Jump; a head hit on a landing plate press is no longer swallowed by the wrap-up / Head hitter 排在 Jump 之后；落地即踩板的顶头不再被收尾吞掉 |
 | 2026-11-11 | 1.4.0 | 1.5.0 | `5c9306d` | Head hitter decided by airtime (12 ticks normal / 3 ticks head hit) / Head hitter 改为按空中时长判定（12 tick 正常 / 3 tick 顶头） |
 | 2026-11-11 | 1.3.8 | 1.5.0 | `5c9306d` | Head hitter gains the world-side criterion (there must be a block above the head), fixing telly misdetection / Head hitter 补世界侧判据（头顶必须有方块），修 telly 误判 |

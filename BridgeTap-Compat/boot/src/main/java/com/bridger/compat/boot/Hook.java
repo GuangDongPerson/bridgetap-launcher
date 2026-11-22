@@ -32,8 +32,14 @@ public final class Hook {
        */
       void onFrame(int site, Object self);
 
-      /** Called from a return-site hook; see {@link Hook#onItemUse}. */
-      void onItemUse(boolean success, Object stack, int site);
+      /**
+       * Called from a return-site hook; see {@link Hook#onItemUse}.
+       *
+       * @param blockPos the clicked {@code BlockPos}, or {@code null} when the client's controller
+       *                 signature has no such argument
+       * @param facing   the clicked face, or {@code null} likewise
+       */
+      void onItemUse(boolean success, Object stack, Object blockPos, Object facing, int site);
 
       /**
        * Called from the prologue of the player's chat send.
@@ -92,9 +98,13 @@ public final class Hook {
     * accepted (a block went down, or an item was used). It is read off the operand stack with a
     * {@code DUP} before the {@code IRETURN}, and the stack argument is the {@code ItemStack} that was
     * in hand, so the agent can tell a placed block from a swung sword.
+    *
+    * <p>{@code blockPos} and {@code facing} are the method's own fourth and fifth arguments. They
+    * exist only in the six-argument controller signature; a client reporting a different one passes
+    * {@code null} for both and the sink falls back to coarser evidence.
     */
-   public static void onItemUse(boolean success, Object stack, int site) {
-      dispatchItem(success, stack, site);
+   public static void onItemUse(boolean success, Object stack, Object blockPos, Object facing, int site) {
+      dispatchItem(success, stack, blockPos, facing, site);
    }
 
    /**
@@ -122,7 +132,8 @@ public final class Hook {
       }
    }
 
-   private static void dispatchItem(boolean success, Object stack, int site) {
+   private static void dispatchItem(boolean success, Object stack, Object blockPos, Object facing,
+         int site) {
       note(site);
 
       FrameSink current = sink;
@@ -130,7 +141,7 @@ public final class Hook {
          return;
       }
       try {
-         current.onItemUse(success, stack, site);
+         current.onItemUse(success, stack, blockPos, facing, site);
       } catch (Throwable t) {
          if (!failed) {
             failed = true;

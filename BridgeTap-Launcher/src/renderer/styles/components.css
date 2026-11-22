@@ -1257,6 +1257,33 @@ html[data-mode="dark"] .themebtn__icon--dark {
   text-align: center;
 }
 
+/* Optional checkbox under the body. Only the uninstall dialog uses it today, but it belongs to the
+   dialog component, not to one caller. · 正文下方的可选勾选框。目前只有卸载弹窗用，但它属于弹窗组件，
+   而不是某一个调用方。 */
+.modal__check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 14px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  cursor: pointer;
+  user-select: none;
+}
+
+.modal__check[hidden] {
+  display: none;
+}
+
+.modal__check input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent, #d33);
+  cursor: pointer;
+}
+
 .modal__actions {
   display: flex;
   justify-content: center;
@@ -1301,6 +1328,304 @@ html[data-mode="dark"] .themebtn__icon--dark {
 
 .modal__btn[hidden] {
   display: none;
+}
+
+/* ── HUD quick-adjust stick · HUD 快捷调整摇杆 ──────────── */
+/*
+ * Same overlay mechanics as the confirm dialog, because it is the same kind of thing: a modal the
+ * user either finishes or abandons. Everything is monochrome and takes its colour from the tokens,
+ * so the light / dark switch needs no separate rules here.
+ *
+ * 与确认弹窗同一套遮罩机制——它们本来就是同一类东西：用户要么做完要么放弃的模态。
+ * 配色全部走 token，所以浅色/暗色切换不需要在这里单写一套。
+ */
+
+.hudstick {
+  position: fixed;
+  inset: 0;
+  z-index: 92;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.hudstick__scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.52);
+  opacity: 0;
+  backdrop-filter: blur(0px);
+  -webkit-backdrop-filter: blur(0px);
+  transition: opacity 0.22s ease, backdrop-filter 0.22s ease;
+}
+
+.hudstick.is-open .hudstick__scrim {
+  opacity: 1;
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+}
+
+.hudstick__card {
+  position: relative;
+  width: min(462px, calc(100vw - 48px));
+  padding: 20px 22px 16px;
+  border-radius: var(--r-xl);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.34);
+  opacity: 0;
+  transform: translateY(10px) scale(0.985);
+  transition: opacity 0.22s ease, transform 0.22s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+.hudstick__card.is-open {
+  opacity: 1;
+  transform: none;
+}
+
+.hudstick__head {
+  margin-bottom: 16px;
+}
+
+.hudstick__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.hudstick__body {
+  display: grid;
+  /* Fixed pad column: the feel of a drag must not change with the length of the active language's
+     labels, otherwise the same gesture quietly becomes a different strength. */
+  /* 底座宽度写死：手感不能随语言文案长短变化，不然换一门语言同一个手势就换了个力度。 */
+  grid-template-columns: 190px 1fr;
+  gap: 18px;
+  align-items: center;
+}
+
+/* ── The pad · 底座 ── */
+
+.hudstick__base {
+  position: relative;
+  width: 190px;
+  height: 190px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  /* Recessed well: one notch deeper than the card in both themes (surface-2 → bg-deep), so the pad
+     reads as something you can push rather than a sticker on the card. */
+  /* 内凹的"碗"：从 surface-2 到 bg-deep，两种主题都比卡片深一档，看起来才像能按的东西，而不是贴纸。 */
+  background: radial-gradient(circle at 50% 32%, var(--surface-2) 0%, var(--bg-deep) 86%);
+  box-shadow: inset 0 3px 14px rgba(0, 0, 0, 0.14), 0 16px 30px -24px rgba(0, 0, 0, 0.7);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  outline: none;
+}
+
+.hudstick__base:focus-visible {
+  box-shadow: 0 0 0 3px var(--accent-ring), inset 0 3px 14px rgba(0, 0, 0, 0.14);
+}
+
+.hudstick__base.is-dragging {
+  cursor: grabbing;
+}
+
+.hudstick__ring {
+  position: absolute;
+  inset: 11%;
+  border-radius: 50%;
+  border: 1px dashed var(--line-strong);
+  pointer-events: none;
+}
+
+/* Crosshair through the middle: something for the eye to judge "straight up" against. · 十字参考线，方便判断"正上/正下" */
+.hudstick__marks {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.hudstick__marks::before,
+.hudstick__marks::after {
+  content: '';
+  position: absolute;
+  background: var(--line-strong);
+  opacity: 0.8;
+}
+
+.hudstick__marks::before {
+  left: 50%;
+  top: 9%;
+  bottom: 9%;
+  width: 1px;
+  transform: translateX(-0.5px);
+}
+
+.hudstick__marks::after {
+  top: 50%;
+  left: 9%;
+  right: 9%;
+  height: 1px;
+  transform: translateY(-0.5px);
+}
+
+.hudstick__knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 62px;
+  height: 62px;
+  margin: -31px 0 0 -31px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  /* Ink on purpose: the knob is the one thing that must never be lost against the pad. Following
+     the monochrome accent rule it is black in the light theme and white in the dark one, i.e. it
+     always sits at the opposite end of the lightness scale from its own base. */
+  /* 故意用墨色：摇杆头是唯一不能跟底座糊在一起的东西。按黑白强调色的规矩，浅色主题下是黑的、
+     暗色主题下是白的，也就是永远待在底座明度的另一端。 */
+  background:
+    radial-gradient(circle at 50% 24%, rgba(255, 255, 255, 0.26) 0%, rgba(255, 255, 255, 0) 62%),
+    var(--ink);
+  box-shadow: 0 10px 18px -8px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.18);
+  /* Offset comes from `--kx` / `--ky`. The transition only serves the spring-back on release and is
+     switched off while dragging, so the knob stays exactly under the pointer. */
+  /* 偏移量由 `--kx` / `--ky` 给。过渡只为松手回弹服务，拖动期间关掉，摇杆才会精确跟手。 */
+  transform: translate(var(--kx, 0px), var(--ky, 0px));
+  transition: transform 210ms var(--ease-spring), box-shadow 160ms ease;
+  pointer-events: none;
+}
+
+.hudstick__base.is-dragging .hudstick__knob {
+  transition: none;
+  box-shadow: 0 16px 26px -10px rgba(0, 0, 0, 0.6), 0 3px 8px rgba(0, 0, 0, 0.2);
+}
+
+.hudstick__knob-grip {
+  position: absolute;
+  inset: 13px;
+  border-radius: 50%;
+  border: 1px dashed var(--on-accent);
+  opacity: 0.5;
+}
+
+/* ── Side column: preview + readouts · 右栏：预览 + 读数 ── */
+
+.hudstick__side {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.hudstick__caption {
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.hudstick__screen {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--r-s);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-3);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.04), inset 0 8px 18px -14px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.hudstick__cross {
+  position: absolute;
+  background: var(--line);
+}
+
+.hudstick__cross--v {
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+.hudstick__cross--h {
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+
+/* The stand-in HUD block. Its offset is set in JS with the agent's own formula — percent of the free
+   travel, no edge flip — and it carries the same scale, so the picture matches the game. */
+/* 代替 HUD 的小块。偏移由 JS 按 agent 同一套公式算（可移动余量的百分比，不换边），
+   缩放也跟着设置走，画面上看到的就是游戏里的样子。 */
+.hudstick__ghost {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  width: calc(68px * var(--hs, 1));
+  height: calc(20px * var(--hs, 1));
+  padding: 0 5px;
+  border-radius: 2px;
+  background: var(--ink-2);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.18);
+}
+
+.hudstick__ghost-line {
+  display: block;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--surface);
+  opacity: 0.95;
+}
+
+.hudstick__ghost-line--short {
+  width: 58%;
+}
+
+.hudstick__reads {
+  display: grid;
+  gap: 6px;
+}
+
+.hudstick__read {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--r-s);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  font-size: var(--fs-tiny);
+}
+
+.hudstick__read-label {
+  color: var(--ink-3);
+}
+
+.hudstick__num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.hudstick__hint {
+  margin: 16px 0 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--ink-3);
+  /* Avoid a lone character on the second line when the sentence has to wrap */
+  /* 需要折行时，别把最后一个字单独甩到第二行 */
+  text-wrap: pretty;
+}
+
+.hudstick__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
 }
 
 /* The big button at the bottom is the "inject device" action, shown on the devices page only · 底部那颗大按钮是"注入设备"的动作，只在设备页出现 */

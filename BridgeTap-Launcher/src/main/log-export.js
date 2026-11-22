@@ -86,6 +86,31 @@ function candidates() {
       ]
     },
     {
+      // Process-scan trail: which ladder rungs ran, what each returned, and — the important case —
+      // which JVMs were found and then dropped by the filter. Without it, "the client is running and
+      // the device list is empty" cannot be told apart from "nothing is running".
+      // 进程扫描留痕：哪几级跑了、各自返回了什么；以及最关键的一种——找到了哪些 JVM 又被过滤掉。
+      // 没有它，"客户端在跑而设备列表为空"和"什么都没跑"分不开。
+      name: 'launcher-scan.log',
+      label: 'Scan log / 进程扫描日志 (scan.log)',
+      paths: [path.join(logTail.logDir(), 'scan.log')]
+    },
+    {
+      // The update swap trail, rescued from the download cache before every launch wipes it (see
+      // preserveApplyLog in updater.js). Without this entry a failed update is unexplainable: the
+      // cache it lived in is gone by the time anyone looks.
+      // 更新替换的留痕，在每次启动清缓存之前被救出来（见 updater.js 的 preserveApplyLog）。
+      // 少了这一条，失败的更新就无从解释：等有人来看的时候，它所在的缓存目录已经被清了。
+      name: 'launcher-apply.log',
+      label: 'Update apply log / 更新替换日志 (apply.log)',
+      paths: [
+        path.join(logTail.logDir(), 'apply.log'),
+        // Still in place when the rescue itself could not run (read-only LOCALAPPDATA, crash)
+        // 救助本身没跑成时仍留在原处的情况（LOCALAPPDATA 只读、崩溃）
+        path.join(os.tmpdir(), 'bridgetap-update', 'apply.log')
+      ]
+    },
+    {
       // payload.dll logs each step in order: jvm.dll → JavaVM → JVMTI → attach jar → Class.forName,
       // and every failure is a `FATAL: ...` line. The native launcher reporting "success" only means
       // the dll was loaded by LoadLibraryW; whether it actually attached to the JVM can only be

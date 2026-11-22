@@ -23,7 +23,7 @@
 
 | Export / 导出 | Purpose / 作用 |
 |---|---|
-| `CALL` | IPC channels the renderer layer can call (listTargets / start / cancel / readLog / openFolder / info / window) / 渲染层能调用的 IPC 通道（listTargets / start / cancel / readLog / openFolder / info / window） |
+| `CALL` | IPC channels the renderer layer can call (listTargets / start / cancel / readLog / openFolder / info / window / windowOpacity). `WINDOW_OPACITY_RESET` is the one channel that runs the other way — main tells the renderer it already restored the opacity (v1.0.18) / 渲染层能调用的 IPC 通道（listTargets / start / cancel / readLog / openFolder / info / window / windowOpacity）。`WINDOW_OPACITY_RESET` 是唯一反向的一条——主进程告诉渲染层它已经把透明度还原了（v1.0.18） |
 | `EVENT` | Channel names the main process pushes one-way, `{kind, payload}` / 主进程单向推送的通道名，`{kind, payload}` |
 | `PHASE` | State-machine enum: `idle → scanning → ready → injecting → attached / failed` / 状态机枚举：`idle → scanning → ready → injecting → attached / failed` |
 | `EVENT_KIND` | Types of pushed messages: `phase` / `targets` / `output` / `notice` / 推送消息的类型：`phase` / `targets` / `output` / `notice` |
@@ -102,7 +102,7 @@ The actual location after packaging:
 打包后的实际落点：
 
 ```
-BridgeTap-Injector-1.0.10.exe         ← single-file deliverable / 单文件交付物
+BridgeTap-Launcher-<version>.exe     ← single-file deliverable / 单文件交付物
   └─ unpacked to %TEMP%\BridgeTapInjector\  ← 解压到此处
        resources\app.asar
        resources\app.asar.unpacked\vendor\injector\BridgeTap.exe   ← the one actually spawned / 真正被 spawn 的那个
@@ -348,7 +348,7 @@ Settings is the third segmented page (Devices / Runtime log / Settings), with tw
 | `display <mode>` | `displayMode` | Dropdown (6 modes) / 下拉（6 个模式） |
 | `axis <AUTO\|Z\|X>` | `preferredAxis` | One of three / 三选一 |
 | `scale <0.5-2.0>` | `hudScale` | Slider / 滑块 |
-| `pos <x> <y>` | `hudX` / `hudY` | Number / 数字 |
+| `pos <x> <y>` | `hudXPercent` / `hudYPercent` | Number, percent of the free travel: 0 = flush left/top, 100 = flush right/bottom, 50 = centred (documented here only — the boxes show no hint line since v1.0.16) / 数字，可移动余量的百分比：0 贴左/上、100 贴右/下、50 居中（仅记在文档里——v1.0.16 起这两行不再显示说明小字）（plus the quick-adjust stick, see below / 另有快捷摇杆，见下） |
 | `background on\|off` | `backgroundEnabled` | Switch / 开关 |
 | — | `textShadow` / `showReadyNotice` / `yieldToTabList` | Switches (previously editable only in the config file) / 开关（原本只有配置文件能改） |
 | — | `gainText` / `noGainText` | Text boxes (placeholder = default value; empty means Gain / No Gain) / 文本框（占位符 = 默认值，空着即 Gain / No Gain） |
@@ -365,6 +365,126 @@ Only four commands remain in game (since v1.5.0): `toggle`, `reset`, `axis`, `ch
 - `/bt chat` is **a toggle**: with no argument it flips between on/off; `/bt chat on|off` is still accepted, which is handy for hardcoding. / `/bt chat` 是**切换式**：不带参数就在 on/off 之间翻；`/bt chat on|off` 仍然认，方便写死。
 - Command names and verbs are **case-insensitive**: `/BT TOGGLE` and `/BridgeTap axis z` both work; only the whole word `/bt` or `/bridgetap` is recognized, so `/btw 你好` is not intercepted. / 命令名和动词都**不分大小写**：`/BT TOGGLE`、`/BridgeTap axis z` 都行；只认整词 `/bt` 或 `/bridgetap`，所以 `/btw 你好` 不会被拦。
 - The injector writes to disk on every change and the agent re-reads it by itself, so `/bt save` is not needed. / 注入器每次改动都直接落盘，agent 自己会重读，不需要 `/bt save`。
+
+### HUD Quick Adjust (v1.0.13) / HUD 快捷调整（v1.0.13）
+
+The two percentage anchors are also reachable from a virtual stick, on a row between "HUD scale" and
+"HUD X". Three rules keep it from becoming a second source of truth:
+
+- **The percentage means "how far across the free travel".** `0` is flush against the left/top edge,
+  `100` flush against the right/bottom, `50` dead centre, and the travel is what is left after the
+  panel's own width/height is taken out. An earlier revision pinned the near edge below 50% and the
+  far edge above it, which made the panel jump its own width at the midpoint — on both axes, in the
+  preview and in game. Measuring the travel keeps every value reachable, keeps the panel on screen
+  and makes the movement continuous, which is what the stick needs. `GlHud.resolveAnchor` and the
+  preview block share the formula; change one and you must change the other.
+- **The stick is a delta control.** The value moves with the pointer's travel, not with where the knob
+  sits inside its base: one base radius ≈ 18%, one pixel ≈ 0.2%, and Shift divides the travel by
+  four. Holding the knob still never lets the value drift on its own, which a rate-style stick would
+  do and which is wrong for something that has to stay put. Arrow keys nudge 1% (0.1% with Shift).
+- **The "quick adjust" row is not a config key.** It lives in `MOD_ACTION_FIELDS` and is spliced into
+  the display list (`FIELDS_FOR_UI`) for the renderer only. It must never enter `MOD_FIELDS`, which
+  drives reading, writing and defaults — otherwise the first write would leave a `hudJoystick=0` line
+  in the properties file that the agent has no idea what to do with.
+- **Nothing is cached in the panel.** Every step goes out through `onMove` → `writeModSettings`, and
+  the two number boxes are refreshed from the same answer, so closing the panel cannot roll anything
+  back and the manual path keeps working exactly as before. The value held at release is flushed
+  immediately.
+- **The agent's cadence is leased, not configured.** A drag writes every 50 ms and each write carries
+  `hudStickUntil=<epoch ms>`, a lease that says "keep re-reading this file every 50 ms until then".
+  `Config` polls at 50 ms while the lease is alive and 500 ms otherwise; opening the panel pre-warms a
+  3 s lease, releasing leaves a 150 ms tail, and closing writes 0. Nothing else knows about the
+  gesture: the file is the whole protocol, and a lease that stops being refreshed expires by itself
+  (capped at one minute), so a launcher killed mid-drag cannot leave the agent at 20 Hz.
+- **The section shows no helper text (v1.0.16).** The stick row, "HUD X" and "HUD Y" carry no hint
+  line, and the panel has no subtitle — the label, the button, the moving preview and the readouts
+  already say what each control does, and three stacked grey sentences were louder than the numbers
+  they explained. The panel keeps exactly one hint, `hudStick.hint`, because the Shift modifier is
+  invisible otherwise: "按住 Shift 可精细调节" / "Hold Shift for fine adjustment". The 0 / 100 / 50
+  meaning that used to sit under both boxes now lives only here and in the field table.
+
+两个百分比锚点也能用虚拟摇杆改，位置在「HUD 缩放」和「HUD 横向」之间。三条规则让它不至于变成第二个真相来源：
+
+- **百分比的含意是"可移动余量走了多少"。** `0` 贴住左/上边，`100` 贴住右/下边，`50` 正中；
+  余量是扣掉面板自身宽高之后剩下的空间。上一版在 50% 以下钉近端、以上钉远端，结果面板在中点
+  会跳自身一个宽度——两个轴、预览和游戏里都一样。按余量来量既保证每个值都到得了、面板不出画布，
+  又保证移动是连续的，这正是摇杆需要的。`GlHud.resolveAnchor` 与预览块共用同一套公式，改一个必须改另一个。
+- **摇杆是增量控件。** 数值跟着指针位移走，不跟着摇杆在底座里的位置走：一个底座半径约 18%，
+  一像素约 0.2%，按住 Shift 位移缩到四分之一。按住不动时数值不会自己漂——速率式摇杆会漂，
+  而一个必须原地不动的位置最忌讳这个。方向键每下 1%（带 Shift 0.1%）。
+- **「快捷调整」那一行不是配置键。** 它在 `MOD_ACTION_FIELDS` 里，只在拼给渲染层的展示清单
+  （`FIELDS_FOR_UI`）中插进去。绝不能进 `MOD_FIELDS`——那张表决定读、写和默认值，
+  一旦进去，第一次写入就会在 properties 里留下 `hudJoystick=0`，agent 根本不知道拿它怎么办。
+- **面板里不缓存任何东西。** 每一步经 `onMove` → `writeModSettings` 直接落盘，两个数字框用同一次
+  回包刷新，所以关掉面板不可能回滚，手动调节那套也照旧能用。松手时手上的值立刻补写。
+- **agent 的节奏是"租"来的，不是配出来的。** 拖动时每 50ms 写一次，每次写入都带上
+  `hudStickUntil=<epoch 毫秒>`——一句"到这一刻之前每 50ms 重读一次这个文件"的租约。`Config` 在租约
+  有效期内 50ms 轮询，其余时间 500ms；面板打开先预热 3s 租约，松手留 150ms 尾巴，关闭写 0。
+  除这三处之外没有任何地方知道"用户正在拖"：文件就是全部协议；不再刷新的租约会自己过期
+  （最长一分钟），所以启动器在拖动中崩掉也不会把 agent 留在 20Hz。
+- **这一段不放说明文字（v1.0.16）。** 摇杆行、「HUD 横向」「HUD 纵向」都不挂说明小字，面板也没有
+  副标题——标题、按钮、跟着动的预览和两个读数已经说清了每个控件干什么，三行叠着的灰字比它们要
+  解释的数值还吵。面板只留一条 `hudStick.hint`，因为 Shift 不给提示就看不出来：
+  「按住 Shift 可精细调节」/「Hold Shift for fine adjustment」。原先挂在那两个框下面的
+  0 / 100 / 50 含义，现在只在这里和字段表里。
+
+### Window Dimming While Dragging (v1.0.17, net added v1.0.18) / 拖动时窗口变淡（v1.0.17，v1.0.18 补网）
+
+The launcher sits on top of the game, so while the player drags the stick its own window covers the
+HUD that is supposed to be moving. The window drops to **15%** for exactly as long as the value is
+changing and comes straight back on release.
+
+启动器压在游戏上，玩家拖摇杆时自己的窗口正好挡住那个本该跟着动的 HUD。于是数值变化的这段时间窗口
+压到 **15%**，松手立刻还原。
+
+- **The baseline lives in the main process, not the renderer.** The renderer only sends the two edges
+  (`true` = start, `false` = stop) and never a number. If it read the current opacity and sent it
+  back, the value it read after a `start` would already be 0.15 — one lost or duplicated message
+  would leave the window at 15% permanently. `src/main/window-opacity.js` captures the pre-gesture
+  opacity once, on the first `true`, and `false` restores *that* captured value.
+  **基准值在主进程，不在渲染层。** 渲染层只发两个边沿（`true` 开始、`false` 结束），从不发数字。
+  如果它去读当前透明度再传回来，`start` 之后读到的已经是 0.15——丢一条或重一条消息，窗口就永远
+  停在 15%。`src/main/window-opacity.js` 在第一次 `true` 时抓取手势前的透明度，`false` 还原的
+  是那个抓下来的值。
+- **只在数值真的变了才开始变淡.** Dimming is driven from `setValues`, not from `pointerdown`:
+  opening the panel, pressing and holding a motionless stick, and releasing without moving must all
+  leave the window untouched. Arrow keys do the same — a clamped step at 0%/100% that moves nothing
+  never dims.
+  **只在数值真的变了才开始变淡。** 变淡由 `setValues` 触发，而不是 `pointerdown`：打开面板、
+  按住不动、按下就松，都必须完全不碰窗口。方向键同理——在 0%/100% 处被夹掉、一步没走的按键不变淡。
+- **Every exit restores.** `pointerup` / `pointercancel` / `lostpointercapture` / window `blur` /
+  any close path (Done, scrim, Esc) all funnel through one `abortGesture()`, and `closeHudStick`
+  sends one more idempotent stop as a second belt. Without that net, a drag interrupted by focus
+  loss would strand the window at 15% with nothing left to restore it.
+  **每条出口都还原。** `pointerup` / `pointercancel` / `lostpointercapture` / 窗口 `blur` / 任何
+  关闭路径（完成、遮罩、Esc）都汇到同一个 `abortGesture()`，`closeHudStick` 再补一次幂等的
+  结束边沿作为第二道保险。没有这张网，被失焦打断的拖动会把窗口一个人留在 15%。
+- **The main process keeps a net of its own (v1.0.18).** Every exit above lives in the page, and a
+  page does not always learn that its gesture is over: **a minimized window does not reliably deliver
+  `blur`**, so the renderer's restore could simply never run and the window came back at 15%. Since
+  main already owns the baseline, it now listens to the window's own `minimize` / `hide` / `blur` and
+  restores there — no renderer cooperation required.
+  **主进程自己也有张网（v1.0.18）。** 上面那些出口全在页面里，而页面并不总能知道手势已经结束：
+  **最小化的窗口不一定送 `blur`**，于是渲染层那次还原可能根本不跑，窗口还原后就停在 15%。基准本来
+  就归主进程，所以它现在监听窗口自己的 `minimize` / `hide` / `blur` 并在那里还原——不需要渲染层配合。
+- **Restoring on main's own must resync the panel (v1.0.18).** `dimmed` in the panel is
+  edge-triggered: if the page never heard about the restore, the flag stays `true`, the next drag's
+  `true` is swallowed as "no change", and dimming is dead for the rest of the session. Main therefore
+  pushes `WINDOW_OPACITY_RESET` after any self-initiated restore, and the panel clears the flag
+  **without** sending a `false` (the window is already restored; a late `false` could also land
+  during a newer gesture and end it).
+  **主进程自己还原之后必须让面板对齐（v1.0.18）。** 面板里的 `dimmed` 是边沿触发的：页面没听到那次
+  还原，标记就停在 `true`，下一次拖动的 `true` 会被当成"状态没变"吞掉，这次运行剩下的时间里变淡
+  就彻底失效了。所以主进程在每次自己发起的还原之后推一条 `WINDOW_OPACITY_RESET`，面板收到后清掉
+  标记，且**不**发 `false`（窗口已经还原；迟到的 `false` 还可能落在新一次手势上把它结束掉）。
+- **`capturePage` cannot prove this, and neither can `getOpacity()` alone.** Screenshots capture the
+  renderer's output, not the composed window, so a dimmed capture looks identical to a normal one.
+  `getOpacity()` is the app reporting on itself. Verification reads the Win32 layered-window alpha
+  from outside the process with `GetLayeredWindowAttributes` (0.15 → **alpha 38**, opaque → **255**).
+  **`capturePage` 证明不了这件事，单看 `getOpacity()` 也不行。** 截图抓的是渲染层输出，不是合成后的
+  窗口，所以变淡时的截图和正常时一模一样；`getOpacity()` 则是应用自说自话。验收用
+  `GetLayeredWindowAttributes` 从进程外部读 Win32 分层窗口的 alpha（0.15 → **alpha 38**，
+  不透明 → **255**）。
 
 ### Switches Must Actually Be Read (v1.3.2) / 开关必须真被读（v1.3.2）
 

@@ -76,6 +76,8 @@ public final class Bridge {
    private static volatile WorldProbe probe;
 
    private static volatile Object hudRenderer;
+   /** Last time the geometry line was logged; the reload loop runs far too often to log each one. · 几何日志上次打印时刻；重载循环太频繁，不能一条一条打 */
+   private static volatile long lastGeometryLog;
    private static volatile Method hudRender;
    private static volatile ClassLoader renderLoader;
    private static volatile File hudJarFile;
@@ -98,6 +100,21 @@ public final class Bridge {
    /** One log line per site the first time it actually reaches the draw branch. */
    private static final boolean[] siteTried = new boolean[10];
    private static volatile boolean blockHookSeen;
+   /**
+    * True when the client has no hookable block-placement method at all.
+    *
+    * <p>Distinct from {@link #blockHookSeen} on purpose. That one means "the hook has fired at least
+    * once", which is false from world join until the first right-click — so using it to decide
+    * whether the take-off fallback may run meant the fallback was live for exactly the window in
+    * which it must not be.
+    *
+    * <p>This one is read from the injection table, where a missing controller method is a fact.
+    *
+    * <p>与 {@link #blockHookSeen} 刻意分开。后者是「钩子至少触发过一次」，从进世界到第一次右键
+    * 之间它都是 false——用它来决定「起跳兜底能不能用」，等于兜底正好在唯一不该生效的那段时间里
+    * 生效。这一个直接读注入表，那里「控制器方法不存在」是事实。
+    */
+   private static volatile boolean blockHookAbsent;
    /** True once the real {@code jump()} hook has fired; the sampled fallback then stands down. */
    private static volatile boolean jumpHookSeen;
    /** True once the world tick counter has been read successfully. */
@@ -106,6 +123,10 @@ public final class Bridge {
    private static volatile Method stackGetItem;
    private static volatile Class<?> itemBlockClass;
    private static boolean itemBlockMissingLogged;
+   /** {@code BlockPos} coordinate accessors, resolved on the first placement. */
+   private static volatile Method[] posCoords;
+   private static boolean posCoordsMissing;
+   private static final int[] NO_STEP = { 0, 0, 0 };
 
    private static long frames;
    private static long ticks;
@@ -130,6 +151,35 @@ public final class Bridge {
    private static int worldIdentity;
 
    private Bridge() {
+   }
+
+   /**
+    * Hands the injection table's verdict about the block hook to the agent and the tracker.
+    *
+    * <p>Called once from {@link Bootstrap} right after the site table is built, i.e. before any
+    * class is transformed and long before the first tick. Both readers need the same answer:
+    * {@link #blockHookAbsent} decides whether a take-off edge may open a run at all, and the tracker
+    * needs to know because its "no timer before the first block" gate must be switchable off on a
+    * client that will never report a block.
+    *
+    * <p>{@code controllerHooked} is what {@code presentSites} actually saw in the controller class,
+    * not what {@code ClassScan} named — the two differ when the descriptor does not match, which is
+    * exactly the case that used to leave the fallback permanently enabled.
+    *
+    * 把注入表对方块钩子的结论交给 agent 与 tracker。
+    *
+    * <p>由 {@link Bootstrap} 在站点表建好之后调用一次，也就是在任何类被转换之前、第一次 tick 之前。
+    * 两个读取方要的是同一个答案：{@link #blockHookAbsent} 决定起跳边沿能不能开局，tracker 需要知道
+    * 它是因为「首个方块之前不计时」这条门必须能在永远报不出方块的客户端上关掉。
+    *
+    * <p>{@code controllerHooked} 是 {@code presentSites} 在控制器类里**实际看到**的，而不是
+    * {@code ClassScan} 报的名字——描述符不匹配时两者不同，而那恰好就是让兜底一直开着的那种情况。
+    */
+   public static void setControllerHookPresent(boolean controllerHooked) {
+      blockHookAbsent = !controllerHooked;
+      Tracker.setTakeOffMayStart(!controllerHooked);
+      Log.info("controller hook " + (controllerHooked ? "present" : "absent")
+         + " -> take-off as a run starter: " + (controllerHooked ? "no" : "yes"));
    }
 
    /** Called from every injected prologue. {@code self} is {@code null} for static methods. */
@@ -251,24 +301,201 @@ public final class Bridge {
          + ")" + frames);
    }
 
-   /** Called from the return site of {@code PlayerControllerMP.onPlayerRightClick}. */
-   public static void onItemUse(boolean success, Object stack, int site) {
+   /**
+    * Called from the return site of {@code PlayerControllerMP.onPlayerRightClick}.
+    *
+    * <p>The click's {@code BlockPos} and {@code EnumFacing} come along since 1.12: they are the two
+    * extra arguments of the controller method, and they are what turn "a block went down somewhere"
+    * into "a block went down at this column". The label gates count columns, so the difference
+    * decides whether a 4b Flat can be proven at all — see {@link #placedColumn}.
+    *
+    * <p>Both are {@code null} when the client's controller has a different signature; the player's
+    * own column is then used, which is the old, weaker evidence.
+    *
+    * 从 {@code onPlayerRightClick} 的返回点调用。
+    * 点击的 {@code BlockPos} 与 {@code EnumFacing} 是控制器方法的两个额外参数，它们把
+    * 「某处放下了一块」变成「这一列放下了一块」。标签门控数的正是列，所以这决定了 4b Flat
+    * 到底能不能被证明——见 {@link #placedColumn}。
+    * 客户端控制器签名不同时两者都是 {@code null}，那时退回玩家自己所在列，即旧的弱证据。
+    */
+   public static void onItemUse(boolean success, Object stack, Object blockPos, Object facing, int site) {
       try {
          if (site != SITE_BLOCK) {
             return;
          }
-         // Reaching this line at all means the hook is installed and firing, even on a rejected
-         // click. That is what suppresses the jump-based fallback below.
+         // Reaching this line at all proves the hook is installed and firing, even on a rejected click.
+      // It no longer gates anything - the fallback reads blockHookAbsent, which is decided from the
+      // injection table - but it is still the cheapest proof that the transform took effect, and a
+      // first-click log line is what tells a field report "the hook works, look elsewhere" apart
+      // from "the hook never fired".
+      // 走到这一行就证明了钩子装上了并且在触发，哪怕这次点击被拒。它现在不再控制任何分支
+      // （兜底看的是 blockHookAbsent，那个由注入表决定），但它仍是「转换确实生效」最省事的证据：
+      // 一条首点日志能把「钩子好着，去别处找」和「钩子从来没触发过」分开。
+      if (!blockHookSeen) {
          blockHookSeen = true;
+         Log.info("block hook fired for the first time (site=" + site + " success=" + success + ")");
+      }
          if (!success || stack == null) {
             return;
          }
          if (!isBlockItem(stack)) {
             return;
          }
-         Tracker.onBlockPlaced();
+         int[] column = placedColumn(blockPos, facing);
+         if (column == null) {
+            Tracker.onBlockPlaced();
+         } else {
+            Tracker.onBlockPlaced(column[0], column[1]);
+         }
       } catch (Throwable t) {
          // same contract: never throw into the caller's method
+      }
+   }
+
+   /**
+    * The column the placed block occupies.
+    *
+    * <p>Vanilla puts the block where it was clicked when that position is empty, and against the
+    * clicked face when it is not, so the answer needs exactly one bit from the world. Upstream
+    * reads it by snapshotting both positions before the click and diffing afterwards; here the
+    * position that changed is derivable from that one bit, which costs a single block lookup.
+    *
+    * @return {@code {x, z}} of the block, or {@code null} when the position could not be read
+    * 放置的方块占哪一列。
+    * 原版在点击位置为空时把块放在那里，不为空时放在越过点击面的相邻格，所以只需要世界给一个事实。
+    * 上游靠点击前后各拍一次快照再比对；这里由这一个事实就能反推出落点，代价是一次方块查询。
+    */
+   private static int[] placedColumn(Object blockPos, Object facing) {
+      int[] at = blockPosition(blockPos);
+      if (at == null) {
+         return null;
+      }
+      WorldProbe p = probe;
+      int id = p == null ? -1 : p.blockIdAt(at[0], at[1], at[2]);
+      int[] step = faceStep(facing);
+      // id == 0 is air, so the click went into empty space and the block landed exactly there.
+      // Anything else — including a failed lookup (-1) — is treated as a click on existing ground:
+      // bridging clicks the block in front of the player, and re-reading the column it clicked
+      // would count the same column twice.
+      // id == 0 是空气，说明点的是空位，块就落在那里。其余情况——包括查不到（-1）——都当作点在
+      // 已有的地面上：过桥点的是身前那一块，把被点击的列再记一次等于同一列数两遍。
+      if (id == 0) {
+         return new int[] { at[0], at[2] };
+      }
+      return new int[] { at[0] + step[0], at[2] + step[2] };
+   }
+
+   /** {@code BlockPos} x/y/z, or {@code null} when the accessors cannot be resolved. */
+   private static int[] blockPosition(Object blockPos) {
+      if (blockPos == null) {
+         return null;
+      }
+      Method[] coords = posCoords;
+      if (coords == null) {
+         coords = resolvePosCoords(blockPos.getClass());
+         if (coords == null) {
+            if (!posCoordsMissing) {
+               posCoordsMissing = true;
+               Log.info("block position accessors unresolved - placement columns fall back to the player");
+            }
+            return null;
+         }
+         posCoords = coords;
+      }
+      try {
+         return new int[] {
+            ((Integer)coords[0].invoke(blockPos)).intValue(),
+            ((Integer)coords[1].invoke(blockPos)).intValue(),
+            ((Integer)coords[2].invoke(blockPos)).intValue()
+         };
+      } catch (Throwable t) {
+         return null;
+      }
+   }
+
+   /**
+    * Resolves the three coordinate getters from {@code Vec3i}.
+    *
+    * <p>Every candidate is a no-argument method returning {@code int}, so the lookup never depends
+    * on the argument types surviving obfuscation: only the names change, and all three spellings are
+    * tried for each axis.
+    */
+   private static Method[] resolvePosCoords(Class<?> type) {
+      String[][] names = {
+         { "n", "getX", "func_177958_n" },
+         { "o", "getY", "func_177956_o" },
+         { "p", "getZ", "func_177952_p" }
+      };
+      Method[] out = new Method[3];
+      for (int i = 0; i < 3; i++) {
+         out[i] = findIntGetter(type, names[i]);
+         if (out[i] == null) {
+            return null;
+         }
+      }
+      return out;
+   }
+
+   private static Method findIntGetter(Class<?> type, String[] names) {
+      for (Class<?> current = type; current != null && current != Object.class;
+            current = current.getSuperclass()) {
+         for (Method candidate : current.getDeclaredMethods()) {
+            if (candidate.getParameterTypes().length != 0 || candidate.getReturnType() != int.class) {
+               continue;
+            }
+            if (!nameMatches(candidate.getName(), names)) {
+               continue;
+            }
+            try {
+               candidate.setAccessible(true);
+               return candidate;
+            } catch (Throwable t) {
+               return null;
+            }
+         }
+      }
+      return null;
+   }
+
+   private static boolean nameMatches(String name, String[] names) {
+      for (String want : names) {
+         if (want.equals(name)) {
+            return true;
+         }
+      }
+      return false;
+   }
+
+   /**
+    * Unit offset of a clicked face, taken from the enum's own order.
+    *
+    * <p>1.8.9 declares {@code EnumFacing} as DOWN, UP, NORTH, SOUTH, WEST, EAST, and that order is
+    * semantic — the client sends the ordinal to the server — so it survives obfuscation. Reading the
+    * offsets off the enum's fields instead would cost several more reflective lookups for no gain.
+    *
+    * 点击面的单位偏移，取自枚举自身的顺序。
+    * 1.8.9 的 {@code EnumFacing} 声明顺序是 DOWN/UP/NORTH/SOUTH/WEST/EAST，而这个顺序是有语义的
+    * ——客户端就是把它当序号发给服务器的——所以它不会被混淆。改去读枚举字段要多好几次反射，没收益。
+    */
+   private static int[] faceStep(Object facing) {
+      if (!(facing instanceof Enum)) {
+         return NO_STEP;
+      }
+      switch (((Enum<?>)facing).ordinal()) {
+         case 0:
+            return new int[] { 0, -1, 0 };
+         case 1:
+            return new int[] { 0, 1, 0 };
+         case 2:
+            return new int[] { 0, 0, -1 };
+         case 3:
+            return new int[] { 0, 0, 1 };
+         case 4:
+            return new int[] { -1, 0, 0 };
+         case 5:
+            return new int[] { 1, 0, 0 };
+         default:
+            return NO_STEP;
       }
    }
 
@@ -657,9 +884,15 @@ public final class Bridge {
       }
 
       // Take-off edge as a run starter, only for a client where onPlayerRightClick could not be
-      // hooked. Jump entries themselves come from detectJump below.
-      if (!blockHookSeen && hasSample && prevGround && !ground) {
-         Tracker.onBlockPlaced();
+      // hooked at all. Asking blockHookSeen here was the bug: that flag only turns true once a
+      // right-click has been observed, so it is false on every client between world join and the
+      // first click - the fallback then started a run on nothing but a jump, the fall into the void
+      // closed it, and the next jump opened another.
+      // 起跳边沿只在客户端**确实钩不上** onPlayerRightClick 时才用来开局。原来这里问的是
+      // blockHookSeen，那正是 bug：它要等观察到一次右键才变真，所以进世界到第一次点击之间
+      // 每个客户端上它都是 false——兜底于是仅凭一次起跳就开局，掉虚空判失败，下一跳又开一局。
+      if (blockHookAbsent && hasSample && prevGround && !ground) {
+         Tracker.onTakeOff();
       }
 
       // A different world invalidates everything the tracker is holding: the tick baseline, the
@@ -897,21 +1130,31 @@ public final class Bridge {
     * needs to be told. It lives in its own classloader, hence the reflective call.
     */
    private static void onConfigReload() {
-      // Switching language only writes the properties; it takes effect without restarting the game
-      // (auto re-reads the client language).
-      // 换语言只写 properties，不重启游戏也要生效（auto 会重新看客户端语言）
-      Lang.load(resolveLanguage());
+      // Only when the language actually changed: while the launcher's HUD stick is being dragged the
+      // file reloads 20 times a second, and re-reading the whole dictionary each time would be pure
+      // waste — the language cannot change mid-drag.
+      // 只在语言真的变了时才重载：摇杆拖动时这个文件一秒要重载 20 次，
+      // 每次都把整本字典重读一遍纯属浪费——拖动过程中语言不可能变。
+      maybeFollowLanguage();
       Object renderer = hudRenderer;
       if (renderer == null) {
          return;
       }
       try {
-         renderer.getClass().getMethod("applyConfig", int.class, int.class, double.class,
-            boolean.class, boolean.class).invoke(renderer, Integer.valueOf(Config.hudX),
-            Integer.valueOf(Config.hudY), Double.valueOf(Config.hudScale),
+         renderer.getClass().getMethod("applyConfig", double.class, double.class, double.class,
+            boolean.class, boolean.class).invoke(renderer, Double.valueOf(Config.hudXPercent),
+            Double.valueOf(Config.hudYPercent), Double.valueOf(Config.hudScale),
             Boolean.valueOf(Config.backgroundEnabled && !"1".equals(System.getenv("BRIDGETAP_NO_BG"))),
             Boolean.valueOf(Config.textShadow));
-         Log.info("hud geometry applied: pos=" + Config.hudX + "," + Config.hudY + " scale=" + Config.hudScale);
+         // One line a second is enough to see that a drag happened; one line per frame would bury
+         // everything else in the log.
+         // 一秒一条足以看出"拖过"，每帧一条会把别的日志全埋掉。
+         long now = System.currentTimeMillis();
+         if (now - lastGeometryLog >= 1000L) {
+            lastGeometryLog = now;
+            Log.info("hud geometry applied: anchor=" + Config.hudXPercent + "%," + Config.hudYPercent
+               + "% scale=" + Config.hudScale);
+         }
       } catch (Throwable t) {
          Log.warn("hud geometry apply failed: " + t);
       }
@@ -1096,9 +1339,9 @@ public final class Bridge {
             ? new String[] {"c", "f", "w", "l", "a", "d", "i"}
             : new String[] {"color", "disableLighting", "enableTexture2D", "enableBlend",
                "tryBlendFuncSeparate", "enableAlpha", "disableDepth"};
-         Object renderer = type.getConstructor(Object.class, int.class, int.class, double.class,
+         Object renderer = type.getConstructor(Object.class, double.class, double.class, double.class,
             boolean.class, boolean.class, String.class, Class.class, String[].class).newInstance(
-               font, Integer.valueOf(Config.hudX), Integer.valueOf(Config.hudY),
+               font, Double.valueOf(Config.hudXPercent), Double.valueOf(Config.hudYPercent),
                Double.valueOf(Config.hudScale),
                Boolean.valueOf(Config.backgroundEnabled && !flagFile("hud.nobg")
                   && !"1".equals(System.getenv("BRIDGETAP_NO_BG"))),

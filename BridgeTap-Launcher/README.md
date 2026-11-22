@@ -14,7 +14,7 @@ Electron 写的桌面壳，把 `BridgeTap.exe` 的内存注入包装成「选客
 npm install          # only installs electron and electron-builder / 只装 electron 与 electron-builder
 npm run fonts        # fetch the MiSans font shards (required on first run, needs network) / 取回 MiSans 字体分片（首次必须，需要联网）
 npm start            # run from source / 从源码运行
-npm run dist         # package → dist/BridgeTap-Injector-1.0.10.exe / 打包 → dist/BridgeTap-Injector-1.0.10.exe
+npm run dist         # package → dist/BridgeTap-Launcher-<version>.exe / 打包 → dist/BridgeTap-Launcher-<version>.exe
 ```
 
 `npm run dist` first checks that the fonts are complete; if any are missing it fails outright instead of producing a build without fonts.

@@ -32,9 +32,13 @@ public final class BridgeTapHook {
       com.bridger.compat.boot.Hook.onFrameObj(self, site);
    }
 
-   /** Return-site prologue for the right-click controller: return value plus held stack. */
-   public static void onItemUse(boolean success, Object stack, int site) {
-      com.bridger.compat.boot.Hook.onItemUse(success, stack, site);
+   /**
+    * Return-site prologue for the right-click controller: return value, held stack, clicked position
+    * and clicked face. The last two are {@code null} on a controller signature that has no such
+    * arguments.
+    */
+   public static void onItemUse(boolean success, Object stack, Object blockPos, Object facing, int site) {
+      com.bridger.compat.boot.Hook.onItemUse(success, stack, blockPos, facing, site);
    }
 
    /**

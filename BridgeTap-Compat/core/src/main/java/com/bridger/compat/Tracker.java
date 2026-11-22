@@ -185,6 +185,38 @@ public final class Tracker {
     */
    private static final int MAX_START_AIR_TICKS = 12;
    /**
+    * Whether a run may be opened by a take-off instead of by an observed placement.
+    *
+    * <p>Only ever true when the block hook provably cannot be installed, because a take-off is not
+    * a placement: the agent sets this from the injection table, where the absence of the controller
+    * method is a fact rather than a guess. It used to be inferred from "the block hook has not fired
+    * yet", and that is not the same statement — between joining a world and the first right-click
+    * the hook has not fired either, so plain jumping opened a run, void falls closed it, and the
+    * cycle repeated until a block was actually placed.
+    *
+    * 是否允许用「起跳」代替「放置方块」来开局。
+    *
+    * <p>只有在方块钩子**确实装不上**时才为真：起跳不是放置，这个判断由 agent 从注入表直接给出，
+    * 那是事实而不是猜测。以前是从「方块钩子还没触发过」反推，这两件事并不等价——从进世界到第一次
+    * 右键之间钩子同样没触发过，于是单纯起跳就开了一局，掉虚空判失败，再跳再开，循环到真的放下
+    * 一块才停。
+    */
+   private static volatile boolean takeOffMayStart;
+   /**
+    * Whether this run has seen its first real placement.
+    *
+    * <p>The gate the whole run hangs on: no clock, no entries and no verdict until one block has
+    * actually gone down. Cleared by {@link #startRun()} and by {@link #reset()}, so a new world, a
+    * {@code /bt reset} or a fresh run can never inherit the previous run's evidence.
+    *
+    * 这一局是否已经见到第一次真正的放置。
+    *
+    * <p>整局都挂在它上面：在真的放下一块之前，不计时、不写条目、不下判定。
+    * {@link #startRun()} 与 {@link #reset()} 都会清掉它，所以换世界、{@code /bt reset} 或新开一局
+    * 都不可能继承上一局的证据。
+    */
+   private static boolean firstPlacementSeen;
+   /**
     * How long a deferred sample may stay queued before it is abandoned.
     *
     * <p>These wait for the tick they were derived from to enter the ring buffer; if that tick never
@@ -195,6 +227,7 @@ public final class Tracker {
    private static final int DIAG_LIMIT = 25;
    private static int startLogged;
    private static int jumpLogged;
+   private static int fourBlockLogged;
 
    private static RunStatus status = RunStatus.IDLE;
    private static boolean isBridging = false;
@@ -400,6 +433,40 @@ public final class Tracker {
       return status;
    }
 
+   /**
+    * Declares whether a take-off may stand in for a placement.
+    *
+    * <p>Called once from the agent, which knows from the injection table whether the client has a
+    * hookable {@code onPlayerRightClick}. Never call it with {@code true} on a client where the hook
+    * is present: that re-opens the "jumping around lights up the HUD" hole this gate exists to
+    * close.
+    *
+    * <p>Sets the flag and forgets any run in flight, because the value is decided at injection time
+    * and a stale run opened under the previous answer must not continue.
+    *
+    * 声明「起跳是否可代替放置」。
+    *
+    * <p>由 agent 调用一次，它从注入表就能知道客户端有没有可钩的 {@code onPlayerRightClick}。
+    * 钩子存在的客户端**绝不能**传 {@code true}：那会把「到处乱跳也点亮 HUD」这个洞重新打开，
+    * 而这个开关的存在就是为了堵住它。
+    *
+    * <p>置位的同时丢弃正在跑的那一局：这个值在注入期就定了，按旧答案开出来的局不该继续。
+    */
+   public static synchronized void setTakeOffMayStart(boolean allowed) {
+      if (takeOffMayStart == allowed) {
+         return;
+      }
+      takeOffMayStart = allowed;
+      firstPlacementSeen = false;
+      Log.info("take-off may start a run: " + allowed + " (block hook "
+         + (allowed ? "absent on this client" : "present; a placement is required)"));
+   }
+
+   /** Diagnostics only: whether the current run has seen its first placement yet. */
+   public static boolean hasFirstPlacement() {
+      return firstPlacementSeen;
+   }
+
    public static double getCurrentBridgeTime() {
       return currentBridgeTime;
    }
@@ -419,6 +486,7 @@ public final class Tracker {
    public static synchronized void reset() {
       restartCooldown.reset();
       PlacementEvidence.reset();
+      firstPlacementSeen = false;
       openingTicks = 0;
       status = RunStatus.IDLE;
       isBridging = false;
@@ -478,6 +546,10 @@ public final class Tracker {
          status = RunStatus.FAILED;
       }
       isBridging = false;
+      // A placement in the old world says nothing about the new one: the player has not built
+      // anything yet, so the gate must start closed again.
+      // 旧世界的一次放置在新区没有意义：玩家还没建任何东西，这道门必须重新关上。
+      firstPlacementSeen = false;
       // The clock, the cooldown and pending samples are all recorded in old-world ticks; without a
       // reset the first block in the new world is treated as "still cooling down".
       // 时钟、冷却、待采样全都按旧世界的 tick 记的，不清的话新世界第一块会被当成「还在冷却」
@@ -696,14 +768,80 @@ public final class Tracker {
    }
 
    /**
-    * Starts a run. This is the only entry point that does.
+    * A block went down, but the client could not say which column.
     *
-    * <p>Matches the original mod exactly: it hooks {@code PlayerControllerMP.onPlayerRightClick},
-    * and only when that call returned true for an {@code ItemBlock} does it call
-    * {@code onBlockPlaced()}. A jump on its own never starts a timer — otherwise hopping around
-    * while building would light up the HUD with a run that is not a run.
+    * <p>Reached from the placement hook when the controller's {@code BlockPos} could not be read.
+    * It is a real placement: the player's own column becomes the weaker evidence, exactly as it did
+    * before the block column was available.
+    *
+    * <p>Never reached by a take-off. That goes through {@link #onTakeOff()} instead, which is a
+    * different statement and is gated separately — conflating the two is what made the fallback
+    * silently disable itself for clients whose controller does not expose the block position.
     */
    public static synchronized void onBlockPlaced() {
+      onPlacement(-1, -1, false, true);
+   }
+
+   /**
+    * A take-off that stands in for a placement, on a client with no block hook at all.
+    *
+    * <p>Only honoured when {@link #setTakeOffMayStart} said so; otherwise it is dropped and logged.
+    * A jump is not a placement, and treating it as one is exactly the bug this gate closes: joining
+    * a world, jumping, falling into the void, jumping again used to run the whole cycle — timer,
+    * entries, FAILED — before a single block had been placed.
+    *
+    * <p>When it <em>is</em> honoured the run still starts with no block on record, so
+    * {@link #firstPlacementSeen} stays false and {@link #onJump()} keeps refusing to record until a
+    * real placement arrives.
+    */
+   public static synchronized void onTakeOff() {
+      if (!takeOffMayStart) {
+         if (startLogged < DIAG_LIMIT) {
+            startLogged++;
+            Log.info("take-off t=" + currentTick + " ignored (this client has a block hook; only a"
+               + " placement may open a run) status=" + status + " bridging=" + isBridging);
+         }
+         return;
+      }
+      onPlacement(-1, -1, false, false);
+   }
+
+   /**
+    * A placement whose block position the client could report.
+    *
+    * <p>Preferred over {@link #onBlockPlaced()}: the gates ask "how many distinct columns did you
+    * build in", and only the block itself answers that. The player's own column does not — during a
+    * bridge the player covers about two blocks in twelve ticks while four blocks go down.
+    *
+    * @param blockX placed block's X · 放下的方块的 X
+    * @param blockZ placed block's Z · 放下的方块的 Z
+    */
+   public static synchronized void onBlockPlaced(int blockX, int blockZ) {
+      onPlacement(blockX, blockZ, true, true);
+   }
+
+   /**
+    * The one implementation behind every placement entry point.
+    *
+    * <p>Keeping it in one place is what stops the overloads drifting apart; the two boolean
+    * parameters are deliberately separate, because "which column" and "was this even a placement"
+    * are different questions and answering both with one flag broke the column-less clients.
+    *
+    * @param blockX  block column, or -1 when unknown
+    * @param blockZ  block column, or -1 when unknown
+    * @param hasBlockColumn true when the client could report where the block went
+    * @param isPlacement    false for a take-off standing in for a placement
+    */
+   private static void onPlacement(int blockX, int blockZ, boolean hasBlockColumn,
+         boolean isPlacement) {
+      // A real placement is the precondition every run needs, and this is the only place it is
+      // satisfied. A take-off must not satisfy it: the whole point of the gate below is that the
+      // take-off client has to wait for an actual block like everyone else.
+      // 真正的放置才是每一局都需要的前置条件，而只有这里能满足它。起跳不能满足——下面那道门存在
+      // 的全部意义，就是让「起跳开局」的客户端也跟别人一样，等到真的放下方块才算数。
+      if (isPlacement) {
+         firstPlacementSeen = true;
+      }
       boolean restart = !isBridging || status == RunStatus.SUCCESS || status == RunStatus.FAILED;
       if (restart) {
          // Upstream 1.5.0: a finished run blocks the next one for five ticks, and no run may start
@@ -715,7 +853,9 @@ public final class Tracker {
             && !airborne;
          if (startLogged < DIAG_LIMIT) {
             startLogged++;
-            Log.info("placement t=" + currentTick + " status=" + status + " entries=" + entries.size()
+            Log.info((isPlacement ? "placement t=" : "take-off t=") + currentTick
+               + " status=" + status + " entries=" + entries.size()
+               + (hasBlockColumn ? " block=" + blockX + ":" + blockZ : " block=player")
                + " -> " + (ready ? "START NEW RUN"
                   : "ignored (cooldown=" + restartCooldown.ready(currentTick)
                      + " pendingPlate=" + pendingPlateSample + " pendingJumps=" + pendingJumps.size()
@@ -725,23 +865,59 @@ public final class Tracker {
             return;
          }
          startRun();
+         // startRun() clears the flag on purpose (see there), so a run that actually opened has to
+         // set it again after the reset - the placement that opened it is its own precondition.
+         // startRun() 会刻意清掉这个标志（原因见那里），所以真正开起来的局必须在复位之后再置一次。
+         if (isPlacement) {
+            firstPlacementSeen = true;
+         }
       } else if (startLogged < DIAG_LIMIT) {
          startLogged++;
-         Log.info("placement t=" + currentTick + " bridging=true status=" + status
-            + " entries=" + entries.size() + " -> continue run");
+         Log.info((isPlacement ? "placement t=" : "take-off t=") + currentTick
+            + " bridging=true status=" + status + " entries=" + entries.size()
+            + (hasBlockColumn ? " block=" + blockX + ":" + blockZ : " block=player")
+            + " -> continue run");
       }
       // Evidence for the label gates. Recorded after startRun() on purpose: that clears the ring,
       // and the placement which opens a run is itself the opening's evidence.
-      PlacementEvidence.record(currentTick, lastX, lastZ);
+      // A take-off is not evidence: recording it would credit the label gates with a block that was
+      // never placed, which is how a bare jump used to earn a 1.0 Flat.
+      // 起跳不是证据：记下来等于给标签门控补上一块从没放过的方块，裸跳拿到 1.0 Flat 就是这么来的。
+      if (isPlacement) {
+         if (hasBlockColumn) {
+            PlacementEvidence.record(currentTick, blockX, blockZ, lastX, lastZ);
+         } else {
+            PlacementEvidence.record(currentTick, lastX, lastZ);
+         }
+      }
    }
 
-   /** Called from the jump() hook. Records one jump entry; never starts a run. */
+   /**
+    * Called from the jump() hook. Records one jump entry; never starts a run.
+    *
+    * <p>The second condition is the "failed run must not restart on the next jump" rule. It reads as
+    * redundant next to the first — {@code failRun} clears {@code isBridging} — but the two are set
+    * from different threads and {@code isBridging} is not volatile, so the explicit status test is
+    * what actually holds the line.
+    */
    public static synchronized void onJump() {
       if (!isBridging || status == RunStatus.SUCCESS || status == RunStatus.FAILED) {
          if (jumpLogged < DIAG_LIMIT) {
             jumpLogged++;
             Log.info("jump t=" + currentTick + " ignored (bridging=" + isBridging
                + " status=" + status + ")");
+         }
+         return;
+      }
+      if (!firstPlacementSeen) {
+         // A run exists but no block has gone down in it, so there is nothing to time yet. This only
+         // happens on a client where a take-off opened the run; on a normal client the placement
+         // hook sets the flag before any jump can arrive.
+         // 这一局开着，但还没放下任何方块，没有可计时的东西。只会在「起跳开局」的客户端上出现；
+         // 正常客户端里放置钩子会在任何一次跳跃到达之前就把它置真。
+         if (jumpLogged < DIAG_LIMIT) {
+            jumpLogged++;
+            Log.info("jump t=" + currentTick + " ignored (no placement yet) status=" + status);
          }
          return;
       }
@@ -770,6 +946,11 @@ public final class Tracker {
       pendingPlateSample = false;
       pendingSuccessTick = -1;
       pendingSuccessTime = 0.0D;
+      // Cleared here and set again by onPlacement's caller path: a run opened by a take-off starts
+      // with no placement either, so the flag may never simply carry over from the previous run.
+      // 在这里清掉，再由 onPlacement 的后续路径重新置位：起跳开出来的局同样一块都没有，
+      // 所以这个标志绝不能从上一局顺延过来。
+      firstPlacementSeen = false;
       startTick = currentTick;
       lastJumpTick = currentTick;
       airStartTick = currentTick;
@@ -808,7 +989,13 @@ public final class Tracker {
    private static void finalizeFlat(double duration) {
       flatDuration = duration;
       flatFinalized = true;
-      if (!entries.isEmpty() && entries.get(0).getType() == JumpEntry.EntryType.FLAT) {
+      // A first jump that failed placement evidence is already labelled Jump; retitling it here
+      // would launder an unverified opening into a valid 1.1x Flat. Upstream guards on the label,
+      // so this does too.
+      // 首跳没过放置证据时已经被标成 Jump，这里再改名就等于把一次没验证的开桥洗成 1.1x Flat。
+      // 上游用标签挡这一层，这里照做。
+      if (!entries.isEmpty() && entries.get(0).getType() == JumpEntry.EntryType.FLAT
+            && !Lang.t("entry.jump").equals(entries.get(0).getLabel())) {
          entries.get(0).setLabel(flatLabel(entries.get(0).getTicksElapsed(), flatDuration));
       }
    }
@@ -1014,11 +1201,18 @@ public final class Tracker {
       isBridging = false;
       status = RunStatus.FAILED;
       restartCooldown.finish(currentTick);
-      int sampleTick = lastJumpTick + 9 + Config.tickOffset;
-      double sampled = coordinateAtTick(sampleTick);
-      if (Double.isNaN(sampled)) {
-         sampled = coord;
+      // Upstream samples the tap that was supposed to happen nine ticks after the last jump, and
+      // refuses to print anything when there is nothing to sample: no entries yet, that tick has
+      // not arrived, or no position snapshot was kept for it. Emitting a line anyway prints a
+      // coordinate that was never measured.
+      // 上游取"最后一跳之后第 9 tick"本该落地的那一下，并且在三种情况下不出这一行：还没有条目、
+      // 那一 tick 还没到、那一 tick 没有位置快照。硬出一行，打的就是一个根本没采样过的坐标。
+      int expectedTapTick = lastJumpTick + 9;
+      int sampleTick = expectedTapTick + Config.tickOffset;
+      if (entries.isEmpty() || currentTick < expectedTapTick || !hasPositionSnapshot(sampleTick)) {
+         return;
       }
+      double sampled = coordinateAtTick(sampleTick);
       double abs = Math.abs(sampled);
       double dec = abs - Math.floor(abs);
       double delta = wrapDelta(dec - lastJumpDecimal);
@@ -1085,8 +1279,11 @@ public final class Tracker {
          openingTicks = ticks;
          String label = flatLabel(ticks, flatDuration);
          double startCoord = currentAxis.equals("X") ? startX : startZ;
+         // An opening can no longer be a 4b Flat, so it no longer needs the four columns that label
+         // used to demand; one placement is the evidence every opening label needs.
+         // 开桥不再有 4b Flat 这一档，也就不再要求那个标签用的四列；开桥标签只需一次放置。
          if (!PlacementEvidence.qualifies(startTick, tick, startCoord, coord,
-               currentAxis.equals("X"), ticks >= 11 && ticks <= 12 ? 4 : 1)) {
+               currentAxis.equals("X"), 1)) {
             label = Lang.t("entry.jump");
          }
          entries.add(new JumpEntry(label, coord, dec, Double.NaN, ticks, JumpEntry.EntryType.FLAT));
@@ -1100,10 +1297,18 @@ public final class Tracker {
          int sinceJump = tick - lastJumpTick;
          double delta = wrapDelta(dec - lastJumpDecimal);
          int blocks = (int)Math.round(Math.abs(coord - lastJumpCoord));
+         // Upstream 1.5.0/1.9.0: twelve ticks is the whole definition of a 4b Flat — the label does
+         // not ask how far the player travelled, only the interval. A previous revision required
+         // four blocks of travel as well, which demoted every real 4b Flat to a plain Jump: field
+         // logs show such a jump covering two blocks, not four, because the player is sneaking.
+         // 上游 1.5.0/1.9.0：12 tick 就是 4b Flat 的全部定义——标签只看间隔，不看走了多远。
+         // 之前这里额外要求四格位移，把每一次真正的 4b Flat 都降级成了普通 Jump：
+         // 现场日志里这种跳跃只走两格，因为玩家是蹲着过的。
+         boolean fourBlockFlat = sinceJump == 12;
          String label;
          if (turnRecorded) {
             label = Lang.t("entry.jump") + " #" + jumpCount;
-         } else if (sinceJump == 12) {
+         } else if (fourBlockFlat) {
             label = Lang.t("entry.fourBlock") + " " + Lang.t("entry.flat") + " #" + jumpCount;
          } else if (sinceJump == 9) {
             label = Lang.t("entry.tapSpeed") + " #" + jumpCount;
@@ -1112,8 +1317,35 @@ public final class Tracker {
          } else {
             label = (blocks >= 4 ? Lang.t("entry.fourBlock") + " " + Lang.t("entry.jump") : Lang.t("entry.jump")) + " #" + jumpCount;
          }
-         if (!turnRecorded && !PlacementEvidence.qualifies(lastJumpTick, tick, lastJumpCoord, coord,
-               currentAxis.equals("X"), sinceJump == 12 ? 4 : 1)) {
+         // Upstream asks for four distinct columns, because a 4b Flat puts four blocks down. The
+         // field rhythm here is one block every four ticks, so twelve ticks hold three placements
+         // and the fourth lands on the next jump's own tick — after this verdict is taken. The gate
+         // therefore asks for the three the window can show; a window with no placement at all is
+         // still rejected, which is the part that matters.
+         // 上游要求四列，因为一次 4b Flat 会放下四块。这里的节奏是每 4 tick 一块，12 tick 里只有
+         // 三次放置，第四块落在下一次跳自己的那一 tick——判完之后。所以门槛按窗口能给出的三次设，
+         // 一列都没有的窗口仍然被判掉，而这才是关键的那部分。
+         int need = fourBlockFlat ? 3 : 1;
+         // Columns are the placed block's now, not the player's: the hook hands over the clicked
+         // BlockPos, so "which columns did you build" is answered directly instead of by proxy.
+         // 列现在是方块自己的列，不再是玩家所在列：钩子带回了被点击的 BlockPos，
+         // 「你建了哪几列」直接得到答案，而不是靠代理值。
+         boolean evidence = PlacementEvidence.qualifies(lastJumpTick, tick, lastJumpCoord, coord,
+            currentAxis.equals("X"), need);
+         // Own counter: the shared jump log stops at DIAG_LIMIT and would hide exactly the runs
+         // this line exists to explain.
+         // 独立计数器：共用的跳跃日志到 DIAG_LIMIT 就停了，恰好会把要解释的那几局藏掉。
+         if (sinceJump == 12 && fourBlockLogged < 8) {
+            fourBlockLogged++;
+            Log.info("4b check: travel=" + blocks + " need=" + need
+               + " window=" + lastJumpTick + ".." + tick
+               + " events=" + PlacementEvidence.eventsBetween(lastJumpTick, tick)
+               + " located=" + PlacementEvidence.blockEventsBetween(lastJumpTick, tick)
+               + " cols=" + PlacementEvidence.columnsBetween(lastJumpTick, tick)
+               + " at=" + PlacementEvidence.describeBetween(lastJumpTick, tick)
+               + " qualifies=" + evidence);
+         }
+         if (!turnRecorded && !evidence) {
             label = Lang.t("entry.jump") + " #" + jumpCount;
          }
          // Opening-only late detection: the first follow-up jump after a 1.0/1.05 Flat.
@@ -1121,11 +1353,15 @@ public final class Tracker {
             lastLaunchX, lastLaunchY, lastLaunchZ, x, y, z, currentAxis.equals("X"),
             // This used to test getLabel().endsWith("Flat"), which breaks in another language
             // ("1.05 平"), so it now looks at the entry type instead: language affects display only
-            // and must not affect the verdict.
+            // and must not affect the verdict. The label is still checked by identity against the
+            // Jump text, because upstream only accepts an opening that actually earned a Flat —
+            // a first jump demoted to Jump is not a Late either.
             // 原来用 getLabel().endsWith("Flat") 判断，换个语言（"1.05 平"）就失效了，
-            // 改成看条目类型：语言只影响显示，不该影响判定
+            // 改成看条目类型：语言只影响显示，不该影响判定。标签仍要与 Jump 文案比对一次，
+            // 因为上游只认真正拿到 Flat 的开桥——首跳被降级成 Jump 的，也不算 Late。
             !turnRecorded && !entries.isEmpty()
                && entries.get(0).getType() == JumpEntry.EntryType.FLAT
+               && !Lang.t("entry.jump").equals(entries.get(0).getLabel())
                && PlacementEvidence.qualifies(lastJumpTick + 1, tick, lastJumpCoord, coord,
                   currentAxis.equals("X"), 2));
          if (late != null) {

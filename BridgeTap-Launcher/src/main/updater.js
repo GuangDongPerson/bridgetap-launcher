@@ -27,6 +27,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
+const logTail = require('./inject/log-tail');
 
 const REPO = 'GuangDongPerson/bridgetap-launcher';
 const API_LATEST = `https://api.github.com/repos/${REPO}/releases/latest`;
@@ -1046,10 +1047,85 @@ function apply(file) {
   return { ok: true };
 }
 
+/**
+ * Keep the last update's evidence out of the directory that is about to be deleted.
+ *
+ * <p>`apply.log` is the only record of a swap attempt: which step ran, what the helper said, why it
+ * gave up. It lives in the cache directory, which is cleared on every launch — so the one thing a
+ * user does after a failed update (close the game, reopen the launcher to look) used to erase the
+ * evidence. Copying it into the log directory keeps it next to agent.log, where the exporter already
+ * knows how to collect it.
+ *
+ * <p>Copied, not moved: the deletion below takes the original with the rest of the directory, so a
+ * failed copy still leaves the file where it was until the next launch. An absent or empty log is
+ * the normal case and is skipped, so a preserved copy from an earlier failure is not overwritten by
+ * a run that never attempted an update.
+ *
+ * 把上一次更新的证据挪出即将被删的目录。
+ *
+ * <p>`apply.log` 是一次替换尝试的唯一记录：跑到哪一步、助手说了什么、为什么放弃。它在缓存目录里，
+ * 而那个目录每次启动都被清掉——于是用户在更新失败后唯一会做的事（关掉游戏、重开启动器查看），
+ * 恰好把证据抹掉。复制到日志目录就能和 agent.log 放在一起，导出器本来就收那里。
+ *
+ * <p>是复制而不是移动：下面的删除会连目录一起带走原件，复制失败时文件仍然留在原处直到下次启动。
+ * 没有日志、或者日志是空的，才是常态，直接跳过——免得一次根本没试过更新的启动，
+ * 覆盖掉上次失败留下的那份。
+ */
+function preserveApplyLog() {
+  const source = path.join(app.getPath('temp'), 'bridgetap-update', 'apply.log');
+  try {
+    const stat = fs.statSync(source);
+    if (!stat.isFile() || stat.size === 0) {
+      return;
+    }
+    const target = path.join(logTail.logDir(), 'apply.log');
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.copyFileSync(source, target);
+  } catch {
+    // Nothing to preserve — see above
+    // 没有可保留的东西——见上
+  }
+}
+
+/**
+ * Delete the update download cache.
+ *
+ * <p>Every download lands in `%TEMP%\bridgetap-update\<version>\` and is a full installer — 115 MB
+ * per version, per machine, never removed by anything. One field machine had 221 MB of stale
+ * installers. Nothing needs them once `apply()` has copied the file, so the next launch clears the
+ * whole directory — after rescuing the one file in it that is worth reading.
+ *
+ * <p>Three properties are deliberate: a missing directory is the normal case and is not an error; a
+ * failed deletion is swallowed (a file held by a virus scanner or a crashed helper is not a reason
+ * to disturb startup); and the call is asynchronous, so a slow disk never delays the first frame.
+ *
+ * 清掉更新下载缓存。
+ *
+ * <p>每次下载都落在 `%TEMP%\bridgetap-update\<版本>\`，是完整的安装包——每个版本 115 MB，逐台机器累积，
+ * 没有任何东西会删它。现场一台机器上堆了 221 MB。`apply()` 复制完文件之后它们就没用了，
+ * 所以每次启动把这整个目录清掉——先把里面唯一值得看的那份救出来。
+ *
+ * <p>三点是刻意的：目录不存在是常态，不算错误；删除失败一律吞掉（被杀软或崩溃的助手占住的文件，
+ * 不该成为打扰启动的理由）；调用是异步的，慢盘不会拖住首帧。
+ */
+function clearUpdateCache() {
+  preserveApplyLog();
+  try {
+    fs.rm(path.join(app.getPath('temp'), 'bridgetap-update'), { recursive: true, force: true }, () => {
+      // Ignored on purpose: force already covers "not there", and the next launch retries the rest
+      // 故意忽略：force 已经处理了"不存在"，剩下的下次启动会再试
+    });
+  } catch {
+    // Never let cleanup reach the caller — startup owns the failure budget
+    // 清理动作绝不上抛——启动阶段不承担这个风险
+  }
+}
+
 module.exports = {
   check,
   download,
   apply,
+  clearUpdateCache,
   probeMirrors,
   MIRRORS,
   compareVersions,

@@ -118,15 +118,34 @@ function delay(ms) {
  */
 class InjectService {
   /**
-   * @param {{emit:(kind:string,payload:object)=>void}} options
+   * @param {{emit:(kind:string,payload:object)=>void, log?:(message:string)=>void}} options
    */
   constructor(options) {
     this.emit = options.emit;
+    /**
+     * Optional sink for the startup trace (`launcher.log`). Passed in rather than required, so this
+     * service stays usable without the launcher's logging — the default is "no log", not a crash.
+     * 启动轨迹（`launcher.log`）的可选出口。用注入而不是直接 require，服务在没有启动器日志的
+     * 场合也能用——默认是"不记"，不是崩掉。
+     */
+    this.log = typeof options.log === 'function' ? options.log : null;
     this.phase = PHASE.IDLE;
     this.busy = false;
     this.stopFollow = null;
     this.current = null;
     this.strategy = native;
+    /**
+     * Last scan failure already shown to the user.
+     *
+     * <p>The list is polled every three seconds, so an unthrottled notice would fire twenty times a
+     * minute and bury itself. One notice per distinct failure: the user learns the scan is broken,
+     * and a second, different failure still gets through.
+     *
+     * 已经告知用户的最后一条扫描失败信息。
+     * 列表每三秒轮询一次，不节流的话一分钟弹二十次，等于没弹。同一条失败只提示一次：
+     * 用户知道了扫描坏了，而换了一种失败仍然能进来。
+     */
+    this.scanError = null;
   }
 
   setPhase(phase, detail) {
@@ -165,6 +184,21 @@ class InjectService {
       targets = await processScan.scan();
     } catch (error) {
       this.emit(EVENT_KIND.NOTICE, { level: 'error', text: i18n.t('toast.scanFailed', error.message) });
+    }
+    // An empty list means two very different things: no client running, or the scan itself could not
+    // run. `scan()` never throws, so without this the second case looked exactly like the first —
+    // which is how a field report ended up with "BLC is running and the launcher shows nothing".
+    // 空列表有两种完全不同的含义：没有客户端在跑，或者扫描本身跑不起来。
+    // scan() 从不抛异常，所以少了这一段，第二种情况会和第一种长得一模一样——
+    // 现场那份"BLC 在跑而启动器什么都不显示"的报告就是这么来的。
+    if (targets.length === 0) {
+      const failure = processScan.failure();
+      if (failure && failure !== this.scanError) {
+        this.scanError = failure;
+        this.emit(EVENT_KIND.NOTICE, { level: 'error', text: i18n.t('toast.scanFailed', failure) });
+      }
+    } else {
+      this.scanError = null;
     }
     this.emit(EVENT_KIND.TARGETS, { targets });
     if (!silent) {
@@ -228,6 +262,7 @@ class InjectService {
       );
     } else {
       this.setPhase(PHASE.FAILED, result.timedOut ? 'timeout' : 'inject-failed');
+      this.logFailure(pid, result);
       this.emit(EVENT_KIND.NOTICE, {
         level: 'error',
         text: this.failureHint(result)
@@ -237,6 +272,60 @@ class InjectService {
     this.busy = false;
     this.current = null;
     return { accepted: true, ok: result.ok };
+  }
+
+  /**
+   * Record why a launch failed, with enough detail to tell the causes apart afterwards.
+   *
+   * <p>The user-facing sentence has to stay short, which means it necessarily drops the parts that
+   * matter for diagnosis: which paths were checked, how big the file was, the raw spawn error, the
+   * signal. Those go to `launcher.log`, next to the startup trace — so a support reply can ask for
+   * one file instead of guessing. A missing injector is exactly the case where "which directory was
+   * empty" is the whole answer, and it must survive in a log even though it cannot fit in a toast.
+   *
+   * 记录一次启动失败的原因，细节足够事后区分不同成因。
+   *
+   * <p>给用户的那句话必须短，也就必然丢掉对诊断至关重要的部分：查了哪些路径、文件多大、
+   * spawn 的原始错误、信号。这些写进 `launcher.log`，和启动轨迹放在一起——于是客服只要索要
+   * 一个文件，而不是靠猜。注入器缺失恰恰是「哪个目录是空的」就是全部答案的场景，
+   * 哪怕塞不进提示条，也必须留在日志里。
+   */
+  logFailure(pid, result) {
+    if (typeof this.log !== 'function') {
+      return;
+    }
+    const parts = ['inject failed: pid=' + pid];
+    if (result.error) {
+      parts.push('error=' + result.error);
+    }
+    if (result.timedOut) {
+      parts.push('timedOut=true');
+    }
+    if (typeof result.code === 'number' && Number.isFinite(result.code)) {
+      parts.push('exitCode=' + result.code);
+    }
+    if (result.signal) {
+      parts.push('signal=' + result.signal);
+    }
+    if (result.syscallCode) {
+      parts.push('syscall=' + result.syscallCode);
+    }
+    if (result.message) {
+      parts.push('message=' + result.message);
+    }
+    if (result.detail && Array.isArray(result.detail.checked)) {
+      // Every candidate and its state: this is what makes a deleted file diagnosable at all.
+      // Paths are resolved to absolute form because the first two candidates are built from
+      // `process.resourcesPath`, which is empty outside a packaged app — logging a bare relative
+      // path there would send the reader looking in the wrong directory.
+      // 每个候选路径及其状态：文件被删时，全靠这一行才查得出是哪个位置空了。
+      // 路径取绝对形式：前两个候选由 `process.resourcesPath` 拼出，打包环境之外它是空的——
+      // 那时日志里只留一个相对路径，会把读日志的人引到错误的目录去。
+      parts.push('checked=[' + result.detail.checked
+        .map((item) => item.state + ':' + path.resolve(item.path))
+        .join(' | ') + ']');
+    }
+    this.log(parts.join(' '));
   }
 
   /**
@@ -306,14 +395,53 @@ class InjectService {
     return { ok: false, text: i18n.t('notice.injectUnconfirmed', i18n.t('reason.noInitComplete')) };
   }
 
+  /**
+   * Turn a failed injection result into one sentence the user can act on.
+   *
+   * <p>The previous version ended with `i18n.t('err.injectFailed', result.code)`, which is correct
+   * only when `code` is a real exit code. It is `null` for three unrelated situations — the injector
+   * file is gone, the spawn was blocked, or the process was killed by a signal — and in all three
+   * the user was shown the literal string "启动失败（退出码 null）". A null in a user-facing message is
+   * never information; it means the branch that produced it did not know what happened.
+   *
+   * <p>Each case now has its own sentence, and the generic message is only used when a numeric exit
+   * code actually exists.
+   *
+   * 把一次失败的注入结果翻译成一句用户能据此行动的话。
+   *
+   * <p>上一版以 `i18n.t('err.injectFailed', result.code)` 收尾，只有在 `code` 是真实退出码时才对。
+   * 而它在三种互不相干的情况下都是 `null`——注入器文件没了、spawn 被拦截、进程被信号终止——
+   * 三种情况都显示成字面的「启动失败（退出码 null）」。面向用户的文案里出现 null 从来不是信息，
+   * 只说明产生它的那个分支并不知道发生了什么。
+   *
+   * <p>现在每种情况都有各自的一句话，通用文案只在真的拿到数字退出码时才用。
+   */
   failureHint(result) {
-    if (result.error === 'injector-missing') {
-      return i18n.t('err.injectorMissing');
+    switch (result.error) {
+      case 'injector-missing':
+        return i18n.t('err.injectorMissing');
+      case 'injector-empty':
+        return i18n.t('err.injectorEmpty');
+      case 'injector-not-file':
+        return i18n.t('err.injectorNotFile');
+      case 'injector-blocked':
+        return i18n.t('err.injectorBlocked', result.syscallCode || 'UNKNOWN');
+      default:
+        break;
     }
     if (result.timedOut) {
       return i18n.t('err.injectTimeout');
     }
-    return i18n.t('err.injectFailed', result.code);
+    if (typeof result.code === 'number' && Number.isFinite(result.code)) {
+      return i18n.t('err.injectFailed', result.code);
+    }
+    // No numeric exit code and no recognised cause. Saying "null" would be worse than saying
+    // nothing useful; name the situation instead.
+    // 既没有数字退出码，也没有可识别的原因。说 "null" 还不如说清处境。
+    if (result.signal) {
+      return i18n.t('err.injectKilled', result.signal);
+    }
+    return i18n.t('err.injectUnknown');
   }
 
   cancel() {

@@ -27,6 +27,38 @@ const api = {
   readLog: (lines) => ipcRenderer.invoke(CALL.READ_LOG, lines),
   openFolder: (which) => ipcRenderer.invoke(CALL.OPEN_FOLDER, which),
   window: (op) => ipcRenderer.send(CALL.WINDOW, op),
+  /**
+   * Drag-time dimming for the HUD stick. The renderer says only start/stop — the opacity to restore
+   * is remembered in the main process, so a duplicate or missing call cannot strand the window.
+   *
+   * 拖摇杆时的窗口变淡。渲染层只说开始/结束——要还原的透明度记在主进程里，
+   * 所以重复或缺失的调用都不会把窗口困住。
+   * @param {boolean} dim `true` = dim to the drag level, `false` = restore · true 变淡，false 还原
+   * @returns {Promise<{ok:boolean, dimmed:boolean}>}
+   */
+  windowOpacity: (dim) => ipcRenderer.invoke(CALL.WINDOW_OPACITY, dim === true),
+  /**
+   * Be told that the main process restored the opacity by itself.
+   *
+   * <p>Happens when the window was minimized, hidden or deactivated mid-drag: main puts the
+   * opacity back whether or not the page noticed. The renderer must drop its own "I am dimmed"
+   * flag on that signal, otherwise the next drag would not send a fresh start edge and dimming
+   * would stay dead for the rest of the session.
+   *
+   * 被告知主进程自己把透明度还原了。
+   *
+   * <p>拖到一半窗口被最小化、隐藏或失去激活时会发生：不管页面有没有察觉，主进程都会还原。
+   * 渲染层收到这个信号必须清掉自己那个"我正在变淡"的标记，否则下一次拖动不会发新的开始边沿，
+   * 这次运行剩下的时间里变淡就彻底失效了。
+   *
+   * @param {() => void} handler
+   * @returns {() => void} Unsubscribe function · 取消订阅
+   */
+  onWindowOpacityReset: (handler) => {
+    const listener = () => handler();
+    ipcRenderer.on(CALL.WINDOW_OPACITY_RESET, listener);
+    return () => ipcRenderer.removeListener(CALL.WINDOW_OPACITY_RESET, listener);
+  },
   /** @param {(maximized:boolean)=>void} handler Called on maximise and restore · 最大化/还原时回调 */
   onWindowState: (handler) => {
     const listener = (_event, maximized) => handler(maximized);
@@ -36,7 +68,7 @@ const api = {
   listLocales: () => ipcRenderer.invoke(CALL.I18N_INDEX),
   loadLocale: (code) => ipcRenderer.invoke(CALL.I18N_LOAD, code),
   exportLogs: () => ipcRenderer.invoke(CALL.LOG_EXPORT),
-  uninstall: () => ipcRenderer.invoke(CALL.APP_UNINSTALL),
+  uninstall: (options) => ipcRenderer.invoke(CALL.APP_UNINSTALL, options),
 
   update: {
     /** @param {{via?:'direct'|'mirror'}} [options] Omitted = official host directly · 省略 = 直连官方 */

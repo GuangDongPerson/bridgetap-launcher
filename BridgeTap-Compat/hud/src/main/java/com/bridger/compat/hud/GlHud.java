@@ -57,9 +57,19 @@ public final class GlHud {
    /**
     * Geometry is re-read every frame, so the agent can push new values when the config file changes
     * (the external injector edits it while the game is running). Not final for that reason.
+    *
+    * <p>The anchor is a percentage of the free travel on the GUI-scaled canvas (see
+    * {@link #resolveAnchor}), resolved against the live viewport on every frame — which is also what
+    * makes a resolution change, a window resize or entering fullscreen land in the same relative
+    * place without any notification from the client.
+    *
+    * 几何每帧重新读，所以配置文件变了（外部启动器在游戏运行时改它）agent 能直接推新值。因此不能是 final。
+    *
+    * <p>锚点是 GUI 缩放后画布上可移动余量的百分比，每帧按当前视口换算——分辨率变化、窗口缩放、进出全屏之所以能
+    * 落到同一个相对位置，靠的也是这一点：不需要客户端通知我们。
     */
-   private volatile int originX;
-   private volatile int originY;
+   private volatile double originXPercent;
+   private volatile double originYPercent;
    private volatile double scale;
    private volatile boolean background;
    private volatile boolean shadow;
@@ -145,13 +155,13 @@ public final class GlHud {
     * tryBlendFuncSeparate, enableAlpha, disableDepth - in MCP spelling or obfuscated. */
    private final String[] glNames;
 
-   public GlHud(Object font, int originX, int originY, double scale, boolean background,
-         boolean shadow, String logPath, Class<?> glState, String[] glNames) {
+   public GlHud(Object font, double originXPercent, double originYPercent, double scale,
+         boolean background, boolean shadow, String logPath, Class<?> glState, String[] glNames) {
       this.font = font;
       this.color = newFloatBuffer(16);
       this.viewport = newIntBuffer(16);
-      this.originX = originX;
-      this.originY = originY;
+      this.originXPercent = originXPercent;
+      this.originYPercent = originYPercent;
       this.scale = scale;
       this.background = background;
       this.shadow = shadow;
@@ -292,13 +302,66 @@ public final class GlHud {
     * <p>The agent calls this reflectively when {@code config/bridgetap.properties} changes on disk,
     * which is what makes "move the panel from the injector window" take effect on the next frame
     * instead of after a restart.
+    *
+    * <p>Anchors are percentages, so the same call means the same place on any canvas.
     */
-   public void applyConfig(int x, int y, double nextScale, boolean nextBackground, boolean nextShadow) {
-      this.originX = x;
-      this.originY = y;
+   public void applyConfig(double xPercent, double yPercent, double nextScale, boolean nextBackground,
+         boolean nextShadow) {
+      this.originXPercent = xPercent;
+      this.originYPercent = yPercent;
       this.scale = nextScale > 0 ? nextScale : 1.0D;
       this.background = nextBackground;
       this.shadow = nextShadow;
+   }
+
+   /**
+    * Turns a percentage anchor into a pixel offset that means the same thing on every canvas.
+    *
+    * <p>The percentage is measured across the <b>free travel</b>, i.e. the room left over once the
+    * panel's own size is taken out: {@code 0} puts its leading edge flush against the left/top of the
+    * canvas, {@code 100} flush against the right/bottom, {@code 50} dead centre, and everything in
+    * between moves in proportion. Nothing ever leaves the canvas, and no value is a dead end.
+    *
+    * <p>Why not "percentage of the canvas, pinned to the near edge"? Because that cannot hold both
+    * ends: a 240 px panel on a 640 px canvas would need 400 px of travel, so 62%…100% would all clamp
+    * to the same place. An earlier version fixed that by flipping the pinned edge at 50% (left edge
+    * below, right edge above) — which made the top end reachable but introduced a jump of the panel's
+    * own width exactly at the midpoint: at 50% the panel starts at the centre, at 50.1% it ends
+    * there. Dragging across the middle threw the panel most of a screen away, in the preview and in
+    * game alike. Measuring across the free travel keeps the whole range reachable (100% really is
+    * flush right) without any discontinuity, and it stays resolution independent: the same number is
+    * the same relative spot at 640 px and at 2560 px.
+    *
+    * <p>When the panel is wider/taller than the canvas the travel is zero, so it sits at the origin —
+    * the only answer that keeps it readable.
+    *
+    * 把百分比锚点换算成在任何画布上都表示同一件事的像素偏移。
+    *
+    * <p>百分比量的是**可移动余量**，也就是扣掉面板自身尺寸之后剩下的空间：{@code 0} 表示面板前缘贴住
+    * 画布左/上，{@code 100} 表示贴住右/下，{@code 50} 表示正中，中间按比例走。面板永远不会跑到画布外，
+    * 也没有哪一段数值是死区。
+    *
+    * <p>为什么不用"画布百分比 + 就近边锚定"？因为那样两端保不住：240 px 的面板放在 640 px 画布上只剩
+    * 400 px 行程，62%…100% 会全部夹到同一个位置。上一版为了够到右边，改成在 50% 处翻转钉住哪条边
+    * （以下钉左边、以上钉右边）——右端是够到了，但正好在中点引入一个"面板自身宽度"的跳变：
+    * 50% 时面板从中心开始，50.1% 时面板到中心结束。拖过中线，面板会甩出去大半屏，预览和游戏里都一样。
+    * 按可移动余量来量，整个区间都能到（100% 真的是贴右），而且完全连续；它同样是分辨率无关的，
+    * 640 px 和 2560 px 下同一个数字都指向同一个相对位置。
+    *
+    * <p>面板比画布还宽/高时余量为零，直接放在原点——这是唯一还能看清的答案。
+    *
+    * @param percent anchor, 0–100
+    * @param extent  canvas size the percentage refers to
+    * @param size    how much room the panel takes, already multiplied by the scale
+    * @return offset in GUI-scaled pixels, always keeping {@code size} inside {@code extent}
+    */
+   public static double resolveAnchor(double percent, double extent, double size) {
+      if (extent <= 0.0D || Double.isNaN(percent)) {
+         return 0.0D;
+      }
+      double clampedPercent = Math.max(0.0D, Math.min(100.0D, percent));
+      double travel = Math.max(0.0D, extent - size);
+      return travel * clampedPercent / 100.0D;
    }
 
    private static Method staticMethod(Class<?> type, String name, Class<?>... params) {
@@ -447,7 +510,14 @@ public final class GlHud {
             GL11.glPushMatrix();
             pushed = true;
             GL11.glLoadIdentity();
-            GL11.glTranslatef(this.originX, this.originY, 0.0F);
+            // Resolved against the viewport that was read one block above, so a resize, a
+            // resolution switch or a fullscreen toggle is picked up on the very next frame.
+            // 用上面刚读到的视口换算，所以窗口缩放、换分辨率、进出全屏都会在下一帧生效。
+            float drawX = (float)resolveAnchor(this.originXPercent, this.scaledWidth,
+               panelWidth * this.scale);
+            float drawY = (float)resolveAnchor(this.originYPercent, this.scaledHeight,
+               panelHeight * this.scale);
+            GL11.glTranslatef(drawX, drawY, 0.0F);
             GL11.glScalef((float)this.scale, (float)this.scale, 1.0F);
          }
 
@@ -498,7 +568,9 @@ public final class GlHud {
          if (!this.firstLogged) {
             this.firstLogged = true;
             trace("hud drawn: " + lines.size() + " line(s), panel " + panelWidth + "x" + panelHeight
-               + " at " + this.originX + "," + this.originY + " via " + this.drawString.getName()
+               + " anchored at " + this.originXPercent + "%," + this.originYPercent + "%"
+               + " of " + this.scaledWidth + "x" + this.scaledHeight
+               + " via " + this.drawString.getName()
                + " (variant " + this.fontVariant + ", rect quad, thread "
                + Thread.currentThread().getName() + ")");
             // Also to the game log: hud.log sits in a directory every past injection has written
@@ -514,7 +586,7 @@ public final class GlHud {
          return false;
       } finally {
          // The matrix push must be undone even when the draw throws. A leaked stack entry shifts
-         // every later GUI element by hudX/hudY, which reads as "the screen flickers a couple of
+         // every later GUI element by the panel offset, which reads as "the screen flickers a couple of
          // times and then the text disappears".
          if (pushed) {
             try {
@@ -731,7 +803,7 @@ public final class GlHud {
             + "+" + this.viewport.get(2) + "+" + this.viewport.get(3)
             + " proj=[" + this.color.get(0) + ", " + this.color.get(5) + ", "
             + this.color.get(10) + ", " + this.color.get(15) + "] at "
-            + this.originX + "," + this.originY + " scale " + this.scale
+            + this.originXPercent + "%," + this.originYPercent + "% scale " + this.scale
             + " thread " + Thread.currentThread().getName() + " gl=" + version);
       } catch (Throwable t) {
          trace("gl state probe failed: " + describe(t));

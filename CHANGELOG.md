@@ -4,6 +4,32 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-11-22
+
+The HUD anchor can now be dragged into place instead of typed in, without giving up the boxes that
+still hold the exact numbers.
+
+### Added
+
+- **HUD quick adjust.** A new row sits between "HUD scale" and "HUD X", with a button that opens a
+  virtual stick. It edits `hudXPercent` / `hudYPercent` together: dragging right moves the anchor
+  across the screen, dragging down moves it towards the bottom. Writes are coalesced to ~50 ms and
+  the value held at release is always flushed, so the game keeps up without the launcher rewriting
+  every client config on every pixel. Hold Shift for a quarter of the travel, or use the arrow keys
+  for 1% steps (0.1% with Shift).
+- **The panel previews the anchor, not just the numbers.** A 16:9 stand-in puts the block in the
+  same place, with the same formula the agent uses, so what you line up is what the HUD does.
+- **The result survives closing.** Every step lands in the same config file the two number boxes
+  edit, and those boxes are refreshed live while dragging — the manual path is untouched, and
+  leaving the panel can never roll anything back.
+-**Launcher launches at startup,** Now you can make the launcher start automatically on boot.Paired with auto-launch,You will enjoy a better user experience.
+
+### Fixed
+ -**The Uninstalling does not take effect** The original uninstallation code pointed to an incorrect, empty path.Now it works.
+ -**4b flat detection** Fixed an issue where 4b flat could not be detected.
+ -**Game process detection** Fixed an issue where the game process might not be detected in certain cases.
+ -**The wrong error response feedback** Fixed an issue where the launcher would provide an abnormal error response when critical files were missing.
+
 ## [1.0.12] - 2026-11-20
 
 Mirror list replaced, and the download path got three hard checks so a transfer that never
@@ -46,6 +72,27 @@ The first release version.
 本文件记录本项目的所有重要变更。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
+
+## [1.1.0] - 2026-11-22
+
+HUD 位置现在可以直接拖到位，不用再一格一格敲数字，而那两个数字框照旧管用。
+
+### 新增
+
+- **HUD 快捷调整。** 设置页在「HUD 缩放」和「HUD 横向位置」之间多了一行，点按钮打开虚拟摇杆。
+  摇杆同时改 `hudXPercent` / `hudYPercent`：向右拖把 HUD 移向右边，向下拖移向底部。
+  写入按约 50ms 合流，松手时手上的值必定补写一次，所以游戏里跟得上，启动器也不会每挪一个像素
+  就把每个客户端的配置重写一遍。按住 Shift 行程缩到四分之一；方向键每下 1%（带 Shift 是 0.1%）。
+- **面板预览的是锚点，不只是数字。** 一块 16:9 的示意图按与 agent 相同的公式摆放，
+  对齐的是什么，游戏里就是什么。
+- **关掉面板结果不会丢。** 每一步都落进那两个数字框改的同一份配置文件，拖动期间数字框也会实时刷新——
+  手动调节那套完全没动，退出面板也不可能把值回滚。
+
+#### 修复
+- **卸载功能是滚木**：原有的卸载代码指向了一个错误的空路径，现已修复。
+- **4b flat 检测**：修复了无法检测到 4b flat 的问题。
+- **游戏进程检测**：修复了在某些情况下可能无法检测到游戏进程的问题。
+- **错误的错误反馈**：修复了在关键文件缺失时，启动器会给出异常错误反馈的问题。
 
 ## [1.0.12] - 2026-11-20
 

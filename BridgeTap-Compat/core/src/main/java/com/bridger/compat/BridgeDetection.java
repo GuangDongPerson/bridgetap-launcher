@@ -19,9 +19,11 @@ public final class BridgeDetection {
       // terminology, and translating it makes it harder to read.
       // 只有「平」这个词进语言包，前面的数字/格数是固定术语，翻译了反而看不懂
       String flat = Lang.t("entry.flat");
-      if (ticks >= 11 && ticks <= 12) {
-         return Lang.t("entry.fourBlock") + " " + flat;
-      }
+      // 4b Flat is a follow-up jump that comes exactly 12 ticks after the previous one. An opening
+      // has no previous jump, so it can never be one — the only place that label is produced is the
+      // 12-tick branch in Tracker.recordJump, which is where it belongs.
+      // 4b Flat 是「上一跳之后正好 12 tick」的后续跳。开桥没有上一跳，所以永远不可能是它；
+      // 这个标签只由 Tracker.recordJump 里 12 tick 那条分支产出，那才是它该在的地方。
       // Upstream 1.5.0: a three-tick opening is its own technique, not a rounding of 1.05.
       if (ticks == 3) {
          return "1.0 " + flat;

@@ -43,7 +43,11 @@ public final class Bootstrap {
    private static final String HOOK_NAME = "onFrameObj";
    private static final String HOOK_DESC = "(Ljava/lang/Object;I)V";
    private static final String ITEM_NAME = "onItemUse";
-   private static final String ITEM_DESC = "(ZLjava/lang/Object;I)V";
+   /**
+    * Return-site hook for the right-click controller: the boolean return value, the held stack, the
+    * clicked {@code BlockPos} and the clicked face.
+    */
+   private static final String ITEM_DESC = "(ZLjava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;I)V";
    /** Chat entry point: argument-aware, and it returns whether the call must be aborted. */
    private static final String CHAT_NAME = "onChatObj";
    private static final String CHAT_DESC = "(Ljava/lang/Object;Ljava/lang/String;I)Z";
@@ -332,6 +336,11 @@ public final class Bootstrap {
             Log.info("  site " + i + " -> " + targets[i][0] + "." + targets[i][1] + targets[i][2]
                + " [" + targets[i][3] + "]");
          }
+         // No controller class at all is the one case that needs no transform to be certain.
+         // 完全没有控制器类，是不需要任何转换就能确定的唯一情况。
+         if (ABSENT[0].equals(targets[Bridge.SITE_BLOCK][0])) {
+            Bridge.setControllerHookPresent(false);
+         }
       } catch (Throwable t) {
          Log.warn("target discovery threw: " + t);
          targets = buildTargets(null);
@@ -347,8 +356,9 @@ public final class Bootstrap {
             }
 
             @Override
-            public void onItemUse(boolean success, Object stack, int site) {
-               Bridge.onItemUse(success, stack, site);
+            public void onItemUse(boolean success, Object stack, Object blockPos, Object facing,
+                  int site) {
+               Bridge.onItemUse(success, stack, blockPos, facing, site);
             }
 
             @Override
@@ -611,6 +621,37 @@ public final class Bootstrap {
       return opcode >= Opcodes.IRETURN && opcode <= Opcodes.RETURN;
    }
 
+   /**
+    * Whether a method descriptor is the six-argument right-click controller
+    * ({@code (EntityPlayerSP, World, ItemStack, BlockPos, EnumFacing, Vec3)Z}).
+    *
+    * <p>Tested by shape, not by name: the profile supplies whatever the client calls these types, and
+    * only the arity and the boolean return are invariant. If a client ever ships a different
+    * signature, the injected call passes nulls for the position arguments instead of reading slots
+    * that mean something else.
+    *
+    * 判断一个方法描述符是不是六参数的右键控制器
+    * （{@code (EntityPlayerSP, World, ItemStack, BlockPos, EnumFacing, Vec3)Z}）。
+    * 按形状判断而不是按名字：这些类型在客户端里叫什么由 profile 决定，只有参数个数和布尔返回值是不变的。
+    * 万一客户端换了签名，注入的调用会给位置参数传 null，而不是去读含义已变的槽位。
+    */
+   private static boolean hasControllerArgs(String descriptor) {
+      try {
+         Type[] args = Type.getArgumentTypes(descriptor);
+         if (args.length != 6 || !Type.BOOLEAN_TYPE.equals(Type.getReturnType(descriptor))) {
+            return false;
+         }
+         for (Type arg : args) {
+            if (arg.getSort() != Type.OBJECT) {
+               return false;
+            }
+         }
+         return true;
+      } catch (Throwable t) {
+         return false;
+      }
+   }
+
    /** The "nothing happened" value for a return opcode, used on the hook-failure path. */
    private static int defaultValue(int returnOpcode) {
       switch (returnOpcode) {
@@ -638,6 +679,14 @@ public final class Bootstrap {
          if (site) {
             count++;
          }
+      }
+      // The transform is the only place that knows whether the hook actually matched. It has to be
+      // reported before the early return: a controller class that matched nothing is exactly the
+      // "hook cannot be installed" case the take-off fallback is meant for.
+      // 只有转换这一步知道钩子到底有没有真的命中。必须在提前 return 之前上报：控制器类一个方法都
+      // 没匹配上，正是「钩子装不上」这个兜底该生效的情形。
+      if (className.equals(targets[Bridge.SITE_BLOCK][0])) {
+         Bridge.setControllerHookPresent(present[Bridge.SITE_BLOCK]);
       }
       if (count == 0) {
          Log.info(className + " has none of the known frame methods - left untouched");
@@ -670,6 +719,12 @@ public final class Bootstrap {
             final String hookMode = targets[site][3];
             final String beforeCall = hookMode.startsWith(MODE_BEFORE_CALL + ":")
                ? hookMode.substring(MODE_BEFORE_CALL.length() + 1) : null;
+            // locals 4 and 5 are the clicked BlockPos and EnumFacing, but only in the six-argument
+            // controller signature. Any other shape gets nulls instead of whatever happens to sit in
+            // those slots, and the sink then falls back to its coarser evidence.
+            // local 4/5 是被点击的 BlockPos 与 EnumFacing，但只有六参数版本才有。别的签名改为传 null，
+            // 而不是把碰巧躺在那两个槽位里的东西交出去，交由接收方退回较弱的证据。
+            final boolean blockArgs = MODE_RETURN_BLOCK.equals(hookMode) && hasControllerArgs(descriptor);
             injected.append(injected.length() == 0 ? "" : ", ").append(name).append(descriptor)
                .append('@').append(hookMode);
 
@@ -743,11 +798,21 @@ public final class Bootstrap {
                      super.visitLabel(start);
                      if (MODE_RETURN_BLOCK.equals(hookMode)) {
                         // Operand stack here is exactly [int returnValue]. DUP feeds the value to
-                        // the hook; local 3 is the ItemStack argument of onPlayerRightClick.
-                        // Both are consumed by the call, so the original IRETURN still sees its own
-                        // return value untouched.
+                        // the hook; locals 3/4/5 are the ItemStack, BlockPos and EnumFacing
+                        // arguments of onPlayerRightClick. All are consumed by the call, so the
+                        // original IRETURN still sees its own return value untouched.
+                        // 此处操作数栈恰好是 [int returnValue]。DUP 把它喂给钩子；local 3/4/5 是
+                        // onPlayerRightClick 的 ItemStack / BlockPos / EnumFacing 参数。调用会把它们
+                        // 全部消费掉，原来的 IRETURN 看到的返回值不受影响。
                         super.visitInsn(Opcodes.DUP);
                         super.visitVarInsn(Opcodes.ALOAD, 3);
+                        if (blockArgs) {
+                           super.visitVarInsn(Opcodes.ALOAD, 4);
+                           super.visitVarInsn(Opcodes.ALOAD, 5);
+                        } else {
+                           super.visitInsn(Opcodes.ACONST_NULL);
+                           super.visitInsn(Opcodes.ACONST_NULL);
+                        }
                         super.visitLdcInsn(Integer.valueOf(site));
                         super.visitMethodInsn(Opcodes.INVOKESTATIC, HOOK_OWNER, ITEM_NAME, ITEM_DESC, false);
                      } else {

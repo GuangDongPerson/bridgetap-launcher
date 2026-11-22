@@ -728,6 +728,36 @@ final class WorldProbe {
    // ------------------------------------------------------------------ ping
 
    /**
+    * Block id at one position, or {@code -1} when the world cannot be read.
+    *
+    * <p>The placement hook needs exactly one bit from the world: was the position that was clicked
+    * empty? A click on air puts the block there; a click on solid ground puts it against the clicked
+    * face instead. Recording the wrong one of the two shifts the column by one block, and the label
+    * gates count columns.
+    *
+    * 单个坐标的方块 id，读不到时返回 {@code -1}。
+    * 放置钩子只需要世界给出一个事实：被点击的位置当时是不是空的。点在空气上，块就落在那里；
+    * 点在地面上，块落在越过那个面的相邻格。记错一边，列就偏一格，而标签门控数的正是列。
+    */
+   int blockIdAt(int x, int y, int z) {
+      Object world = world();
+      if (world == null || getBlockState == null || stateGetBlock == null
+            || blockGetId == null || blockPosCtor == null) {
+         return -1;
+      }
+      try {
+         Object pos = blockPosCtor.newInstance(
+            Integer.valueOf(x), Integer.valueOf(y), Integer.valueOf(z));
+         Object state = call(getBlockState, world, pos);
+         Object block = state == null ? null : call(stateGetBlock, state);
+         Object id = block == null ? null : call(blockGetId, null, block);
+         return id instanceof Integer ? ((Integer)id).intValue() : -1;
+      } catch (Throwable t) {
+         return -1;
+      }
+   }
+
+   /**
     * Round-trip latency to the server in milliseconds, {@code -1} when it cannot be read.
     *
     * <p>1.8.9 exposes it as {@code NetworkPlayerInfo.getResponseTime()}, i.e. the number the tab

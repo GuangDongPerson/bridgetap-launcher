@@ -130,9 +130,9 @@ final class GameBinding {
    /**
     * The client's GUI scale factor, or 0 when it is on "auto".
     *
-    * <p>The overlay draws in GUI-scaled pixels - the same space {@code hudX/hudY} were tuned in -
-    * and it has to set up that projection itself, because on Badlion the hook point sits after every
-    * renderer, where the projection is the 3D one.
+    * <p>The overlay draws in GUI-scaled pixels, and it has to set up that projection itself, because
+    * on Badlion the hook point sits after every renderer, where the projection is the 3D one. What
+    * the config stores is a percentage of that canvas, not a pixel offset.
     */
    /**
     * The language the client itself selected ({@code GameSettings.language} in 1.8.9), or null when

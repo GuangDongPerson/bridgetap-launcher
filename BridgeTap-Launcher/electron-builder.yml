@@ -1,7 +1,7 @@
 # electron-builder configuration
 #
 # Goal: one exe, no installation, double-click and run.
-#   npm run dist  ->  dist/BridgeTap-Launcher-1.0.10.exe
+#   npm run dist  ->  dist/BridgeTap-Launcher-<version>.exe
 #
 # Why portable instead of nsis:
 #   nsis     writes an uninstall entry into the system and installs into Program Files — that counts
@@ -13,7 +13,7 @@
 # electron-builder 配置
 #
 # 目标：一个 exe、免安装、双击即用。
-#   npm run dist  ->  dist/BridgeTap-Launcher-1.0.10.exe
+#   npm run dist  ->  dist/BridgeTap-Launcher-<version>.exe
 #
 # 为什么是 portable 而不是 nsis：
 #   nsis   会在系统里写卸载项、装到 Program Files，属于"安装"。
@@ -43,6 +43,11 @@ files:
   # 界面会全部 fallback 成键名。加一门语言只需要往这个目录丢一个 json。
   - i18n/**/*
   - vendor/launcher/BridgeTap.exe
+  # Tray icon. Read at runtime through `fs` (see main/tray.js) and scaled down to 16 px, so it has to
+  # travel inside the package rather than live only in build/ as a build resource.
+  # 托盘图标。运行时用 `fs` 读取（见 main/tray.js）并缩到 16px，所以必须随包走，
+  # 不能只作为构建资源留在 build/ 里。
+  - build/icon.png
   - "!**/*.map"
   - "!**/.DS_Store"
 

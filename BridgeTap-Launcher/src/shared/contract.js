@@ -96,6 +96,32 @@ const CALL = {
    */
   WINDOW_STATE: 'window:state',
   /**
+   * (dim:boolean) => {ok:boolean, dimmed:boolean}
+   *   Drag-time window dimming for the HUD stick. `true` drops the whole window to the dim level,
+   *   `false` puts back exactly the opacity that was in effect before the first `true`. Idempotent:
+   *   extra `true`s never re-capture the baseline (which would ratchet the window towards the dim
+   *   level), and extra `false`s are no-ops.
+   * (dim:boolean) => {ok:boolean, dimmed:boolean}
+   *   HUD 摇杆拖动期间的窗口变淡。`true` 把整个窗口压到变淡透明度，`false` 精确还原第一次
+   *   `true` 之前生效的透明度。幂等：重复的 `true` 不会重新抓基准（那会让窗口一路往变淡值上爬），
+   *   重复的 `false` 什么也不做。
+   */
+  WINDOW_OPACITY: 'window:opacity',
+  /**
+   * () => void
+   *   Main → renderer: "I have already put the opacity back, so stop believing you are dimmed."
+   *   Sent when the main process restores the window on its own — the window was minimized, hidden
+   *   or deactivated mid-drag, and the page may never have received `blur`. Without it the renderer
+   *   would keep its edge-triggered `dimmed` flag at `true`, so the next drag would never send a
+   *   fresh `true` and the window would simply stop dimming for the rest of the session.
+   * () => void
+   *   主进程 → 渲染层："透明度我已经还回去了，别再以为自己正在变淡。"
+   *   主进程自己还原窗口时发它——拖到一半窗口被最小化、隐藏或失去激活，而页面可能根本没收到
+   *   `blur`。没有它，渲染层那个边沿触发的 `dimmed` 标记会一直停在 `true`，下一次拖动就不会再
+   *   发新的 `true`，于是这次运行剩下的时间里窗口都不再变淡。
+   */
+  WINDOW_OPACITY_RESET: 'window:opacity-reset',
+  /**
    * () => {default, locales:[{code,name}]}          Available languages (from i18n/index.json).
    * () => {default, locales:[{code,name}]}          可用语言列表（来自 i18n/index.json）
    */

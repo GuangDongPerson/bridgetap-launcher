@@ -58,7 +58,8 @@ public final class BtSyncTest {
       check("3 tick → 1.0 Flat", BridgeDetection.flatLabel(3, 1.05), "1.0 Flat");
       check("4 tick → 1.05 Flat", BridgeDetection.flatLabel(4, 1.05), "1.05 Flat");
       check("5 tick → 1.1 Flat", BridgeDetection.flatLabel(5, 1.05), "1.1 Flat");
-      check("12 tick → 4b Flat", BridgeDetection.flatLabel(12, 2.0), "4b Flat");
+      check("11 tick opening is not a 4b Flat / 11 tick 开局不是 4b Flat", BridgeDetection.flatLabel(11, 1.15), "1.15 Flat");
+      check("12 tick opening is not a 4b Flat / 12 tick 开局不是 4b Flat", BridgeDetection.flatLabel(12, 2.0), "2.00 Flat");
       check("6 tick/1.2s → 1.2 Flat", BridgeDetection.flatLabel(6, 1.2), "1.2 Flat");
 
       // ---- 2. lateLabel rules ----
@@ -529,10 +530,10 @@ public final class BtSyncTest {
       com.bridger.compat.Config.preferredAxis = oldAxis;
 
       heard.clear();
-      int hudXBefore = com.bridger.compat.Config.hudX;
+      int hudXBefore = (int)com.bridger.compat.Config.hudXPercent;
       com.bridger.compat.Chat.handle("/bt pos 111 222", sink);
       check("pos was removed, config untouched / pos 已砍掉，配置没被改",
-         Boolean.valueOf(com.bridger.compat.Config.hudX != 111), Boolean.TRUE);
+         Boolean.valueOf(com.bridger.compat.Config.hudXPercent != 111.0D), Boolean.TRUE);
       boolean helpHasToggle = false;
       for (String line : heard) {
          if (line.contains("/bt toggle")) {
@@ -1147,6 +1148,82 @@ public final class BtSyncTest {
       check("the rescue is reported as Void, not Teleport / 该次判定的失败条目是失误行",
          Tracker.getEntries().get(Tracker.getEntries().size() - 1).getType(),
          JumpEntry.EntryType.FAIL_TAP);
+
+      // ---- 20. the first-placement gate: nothing runs before a block goes down ----
+      // ---- 20. 首个方块门：一块没放下之前什么都不跑 ----
+      System.out.println("[20] no run before the first placement / 首个方块之前不开局");
+
+      // The reported bug, replayed exactly. Joining a world with a working block hook, jumping,
+      // falling into the void and jumping again used to produce timer + entries + FAILED, over and
+      // over, until a block was finally placed. The take-off edge must now be inert on any client
+      // whose controller is hookable, and inert by default until told otherwise.
+      // 现场报的 bug，原样重放：方块钩子正常的客户端上进世界、跳、掉虚空、再跳，以前会反复产出
+      // 计时+条目+失败，直到真的放下一块才停。现在只要控制器可钩，起跳边沿就必须完全无效；
+      // 而默认值（没人告诉它）也必须是无效。
+      Tracker.reset();
+      Tracker.setTakeOffMayStart(false);
+      Tracker.setTickSource(() -> -1L);
+      Tracker.setTimeSource(() -> -1.0D);
+      Tracker.setPlateProbe((x, y, z) -> false);
+      Tracker.noteY(70.0); Tracker.onTick(0.0, 70.0, 0.0, true);   // t=1 standing
+      for (int i = 0; i < 3; i++) {
+         // A jump: the agent reports the take-off edge from the tick loop.
+         // 一次起跳：agent 从 tick 循环里报这个起跳边沿。
+         Tracker.onTakeOff();
+         Tracker.noteY(70.42); Tracker.onTick(0.3 + i, 70.42, 0.0, false);
+         fallToVoid(70.42);
+         check("jump #" + (i + 1) + " after world join does not start a run / 进世界后第 "
+            + (i + 1) + " 次跳跃不开局", Tracker.getStatus(), Tracker.RunStatus.IDLE);
+      }
+      check("no entries from bare jumping / 裸跳不产生任何条目",
+         Integer.valueOf(Tracker.getEntries().size()), Integer.valueOf(0));
+      check("clock never started / 计时没有开始",
+         Double.valueOf(Tracker.getCurrentBridgeTime()), Double.valueOf(0.0));
+
+      // The first real placement opens the run, and only then does a jump count.
+      // 第一次真正的放置才开这一局，之后跳跃才算数。
+      Tracker.noteY(70.0); Tracker.onTick(0.0, 70.0, 0.0, true);
+      Tracker.onBlockPlaced(4, 9);
+      check("the first placement opens the run / 首次放置开局",
+         Tracker.getStatus(), Tracker.RunStatus.BRIDGING);
+      check("the run has its first placement / 这一局已满足首个放置",
+         Boolean.valueOf(Tracker.hasFirstPlacement()), Boolean.TRUE);
+
+      // ---- 20b. a take-off client still needs a placement before anything is recorded ----
+      // ---- 20b. 起跳开局客户端也必须先放下方块才记录 ----
+      System.out.println("[20b] take-off as a fallback still waits for a block / 起跳兜底也要等方块");
+      Tracker.reset();
+      Tracker.setTakeOffMayStart(true);
+      Tracker.setTimeSource(() -> -1.0D);
+      Tracker.setPlateProbe((x, y, z) -> false);
+      Tracker.noteY(70.0); Tracker.onTick(0.0, 70.0, 0.0, true);
+      Tracker.onTakeOff();
+      check("on a hookless client a take-off may open the run / 无钩子客户端起跳可以开局",
+         Tracker.getStatus(), Tracker.RunStatus.BRIDGING);
+      check("but it is not a placement / 但起跳不算放置",
+         Boolean.valueOf(Tracker.hasFirstPlacement()), Boolean.FALSE);
+      Tracker.noteY(70.42); Tracker.onTick(0.3, 70.42, 0.0, false);
+      check("so the jump is not recorded yet / 所以这次跳跃还不记录",
+         Integer.valueOf(Tracker.getEntries().size()), Integer.valueOf(0));
+      // The run dies in the void; the next take-off must not resurrect it before the cooldown and
+      // the placement gate both clear.
+      // 这一局掉虚空死掉；在冷却与放置门都放行之前，下一次起跳不许把它复活。
+      fallToVoid(70.42);
+      check("the void fall fails the run / 掉虚空判失败",
+         Tracker.getStatus(), Tracker.RunStatus.FAILED);
+      Tracker.noteY(70.0); Tracker.onTick(0.0, 70.0, 0.0, true);
+      Tracker.onTakeOff();
+      check("the next take-off does not restart it / 下一次起跳不重开",
+         Tracker.getStatus(), Tracker.RunStatus.FAILED);
+
+      // ---- 20c. reset() must clear the placement precondition ----
+      // ---- 20c. reset() 必须清掉「已放置」前置条件 ----
+      System.out.println("[20c] reset clears the placement precondition / reset 清掉放置前置");
+      Tracker.reset();
+      Tracker.setTakeOffMayStart(true);
+      check("after reset nothing is recorded as placed / reset 之后不残留已放置状态",
+         Boolean.valueOf(Tracker.hasFirstPlacement()), Boolean.FALSE);
+      Tracker.setTakeOffMayStart(false);
 
       Tracker.setPlateProbe((x, y, z) -> false);
       Tracker.setTimeSource(() -> -1.0D);

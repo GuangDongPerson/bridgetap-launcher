@@ -21,6 +21,7 @@
 import * as render from './ui/render.js';
 import * as motion from './ui/motion.js';
 import * as settingsView from './ui/settings-view.js';
+import { openHudJoystick } from './ui/hud-joystick.js';
 import { createTheme, nextMode } from './ui/theme.js';
 import { toast } from './ui/toast.js';
 import { initI18n, applyStatic, t, locale, locales } from './i18n.js';
@@ -77,6 +78,9 @@ const refs = {
   modalScrim: document.getElementById('confirmScrim'),
   modalTitle: document.getElementById('confirmTitle'),
   modalBody: document.getElementById('confirmBody'),
+  modalCheckWrap: document.getElementById('confirmCheckWrap'),
+  modalCheck: document.getElementById('confirmCheck'),
+  modalCheckLabel: document.getElementById('confirmCheckLabel'),
   modalCancel: document.getElementById('confirmCancel'),
   modalOk: document.getElementById('confirmOk')
 };
@@ -239,10 +243,19 @@ function paintTip(scene) {
 /* ── Custom confirm modal · 自绘确认弹窗 ─────────────────── */
 
 let modalResolver = null;
+/** Whether the open dialog shows a checkbox; decides the shape `openModal` resolves. */
+let modalHasCheckbox = false;
 
 /**
  * @param {{title:string, body:string, okText:string, cancelText?:string, tone?:'normal'|'danger'}} options
  * @returns {Promise<boolean>} true on confirm, false on cancel · 确认 true，取消 false
+ */
+/**
+ * @param {{title:string, body:string, okText:string, cancelText?:string, tone?:'normal'|'danger',
+ *          checkbox?:{label:string, checked?:boolean}}} options
+ * @returns {Promise<boolean|{ok:boolean, checked:boolean}>} A dialog with a checkbox resolves an
+ *   object, because "confirmed" alone throws away the box. Everything else keeps resolving a boolean.
+ *   带勾选框的弹窗 resolve 一个对象——只回 true/false 就把勾选框丢了。其余弹窗仍然回布尔值。
  */
 function openModal(options) {
   const tone = options.tone === 'danger' ? 'danger' : 'normal';
@@ -253,6 +266,15 @@ function openModal(options) {
   refs.modalOk.classList.toggle('modal__btn--ghost', tone !== 'danger');
   refs.modalCancel.textContent = options.cancelText || '';
   refs.modalCancel.hidden = !options.cancelText;
+
+  const check = options.checkbox;
+  modalHasCheckbox = Boolean(check);
+  refs.modalCheckWrap.hidden = !modalHasCheckbox;
+  if (check) {
+    refs.modalCheckLabel.textContent = check.label;
+    refs.modalCheck.checked = check.checked === true;
+  }
+
   refs.modal.hidden = false;
   // Force a reflow; otherwise is-open is added right after hidden is removed and the transition never runs
   // 强制一次 reflow，否则 hidden 刚取消就加 is-open，过渡不会跑
@@ -270,9 +292,18 @@ function closeModal(result) {
   }, 240);
   const resolve = modalResolver;
   modalResolver = null;
-  if (resolve) {
-    resolve(result);
+  if (!resolve) {
+    return;
   }
+  // Confirming a dialog that carries a checkbox hands back both halves; cancelling stays `false`
+  // so every caller's `if (!confirmed) return;` keeps working.
+  // 确认带勾选框的弹窗要同时交回两半；取消仍然是 `false`，所有调用方的
+  // `if (!confirmed) return;` 照旧成立。
+  if (result === true && modalHasCheckbox) {
+    resolve({ ok: true, checked: refs.modalCheck.checked });
+    return;
+  }
+  resolve(result);
 }
 
 /* ── Update dialog · 更新弹窗 ────────────────────────────── */
@@ -1164,9 +1195,17 @@ function paintSettings() {
     return;
   }
   const mod = snapshot.mod;
-  settingsView.renderModSettings(refs.modSettingsBody, mod.fields, mod.values, onModChange);
+  settingsView.renderModSettings(refs.modSettingsBody, mod.fields, mod.values, onModChange,
+    (field, trigger) => {
+      // Action rows carry their own id so a second one can be added later without touching this
+      // 动作行自带 id，以后再加一个也不用改这里
+      if (field.action === 'hudJoystick') {
+        openHudPanel(trigger);
+      }
+    });
   settingsView.renderAppSettings(refs.appSettingsBody, {
     logLines: snapshot.injector.logLines,
+    launchOnStartup: snapshot.injector.launchOnStartup === true,
     autoUpdateCheck: snapshot.injector.autoUpdateCheck !== false,
     useMirrorCheck: snapshot.injector.useMirrorCheck === true,
     theme: snapshot.injector.theme || { mode: theme.mode },
@@ -1185,6 +1224,9 @@ function paintSettings() {
     },
     onLogLines: (value) => {
       void saveAppSetting({ logLines: Number(value) });
+    },
+    onLaunchOnStartup: (on) => {
+      void saveAppSetting({ launchOnStartup: on === true });
     },
     onAutoUpdate: (on) => {
       void saveAppSetting({ autoUpdateCheck: on === true });
@@ -1209,18 +1251,20 @@ function paintSettings() {
       bridge.openFolder(which === 'mod' ? 'mod' : 'logs');
     },
     onUninstall: async () => {
-      const confirmed = await openModal({
+      const answer = await openModal({
         title: t('uninstall.confirmTitle'),
         body: t('uninstall.confirmBody'),
         okText: t('uninstall.confirmAction'),
         cancelText: t('uninstall.cancel'),
-        tone: 'danger'
+        tone: 'danger',
+        checkbox: { label: t('uninstall.keepConfig'), checked: false }
       });
-      if (!confirmed) {
+      if (!answer) {
         return;
       }
+      const keepConfig = answer.checked === true;
       try {
-        const result = await bridge.uninstall();
+        const result = await bridge.uninstall({ keepConfig });
         if (!result.ok) {
           toast(refs.toasts, { level: 'error', text: t('uninstall.failed', result.error || '') });
           return;
@@ -1248,6 +1292,15 @@ async function saveAppSetting(patch) {
       state.settings.injector = { ...state.settings.injector, ...next };
     }
     state.logCap = next.logLines;
+    // The main process rolls the value back when Windows refuses the scheduled task. The switch has
+    // already flipped in the DOM, so the screen has to be redrawn from the value that survived —
+    // otherwise it keeps showing a state the file does not contain.
+    // 主进程在 Windows 拒绝计划任务时会把值回滚。此时开关在 DOM 里已经翻过去了，界面必须按
+    // 存下来的值重画——否则它会一直显示着一个文件里并不存在的状态。
+    if (next.startupError) {
+      toast(refs.toasts, { level: 'error', text: t('toast.startupRegisterFailed', next.startupError) });
+      paintSettings();
+    }
     // Auto inject was just turned on/off, or the wait time changed: reschedule the countdown right away
     // 刚打开/关掉自动注入、或者改了等待时长，立刻按新设置重排倒计时
     maybeScheduleAutoInject();
@@ -1297,6 +1350,305 @@ async function onModChange(key, value) {
       text: t('toast.modWriteFailed') + ' · ' + error.message
     });
   }
+}
+
+/* ── HUD quick adjust · HUD 快捷调整 ────────────────────── */
+
+/**
+ * How often a drag is allowed to reach the disk, in ms.
+ *
+ * <p>A pointer drag fires at 60–120 Hz. Writing per event would rewrite every client config dozens of
+ * times for one gesture, but writing too slowly is worse now that the agent can follow: the agent
+ * polls every 50 ms while the lease below is alive, so a 50 ms write cadence makes the panel move in
+ * 20 steps a second instead of 2. The value held at release is always flushed immediately.
+ *
+ * 一次拖动最多隔多久落一次盘（毫秒）。
+ *
+ * <p>指针拖动是 60–120Hz。逐事件写会把每个客户端配置重写几十遍；但写得太慢更糟——agent 现在能在
+ * 租约有效期内每 50ms 读一次，所以 50ms 的写入节奏能让面板一秒走 20 步，而不是 2 步。
+ * 松手时手上的值一定会立刻补写一次。
+ */
+const HUD_STICK_INTERVAL = 50;
+/**
+ * How far ahead every drag write extends the agent's fast-poll lease.
+ *
+ * <p>It doubles as the crash guard: if the launcher disappears mid-drag, the agent drops back to its
+ * idle cadence on its own once this runs out.
+ *
+ * 每次拖动写入都把 agent 的快轮询租约推到多久之后。
+ *
+ * <p>它同时是崩溃兜底：启动器在拖动中消失，租约到期后 agent 自己退回空闲节奏。
+ */
+const HUD_STICK_LEASE_MS = 1500;
+/**
+ * Lease written when the panel opens, before the user has grabbed the stick.
+ *
+ * <p>The agent needs up to one idle tick (500 ms) to notice a new lease, and the hand needs longer
+ * than that to travel from the button to the pad — so by the first drag the fast cadence is already
+ * running. It expires on its own, so a panel left open does not pin the agent at 20 Hz.
+ *
+ * 面板打开、用户还没抓摇杆时先写一份租约。
+ *
+ * <p>agent 最多要一个空闲周期（500ms）才能发现新租约，而手从按钮移到摇杆上比这更久——
+ * 所以第一次拖动时快节奏已经跑起来了。它会自己过期，面板开着不管也不会把 agent 钉在 20Hz。
+ */
+const HUD_STICK_PREWARM_MS = 3000;
+/**
+ * Lease left behind after the pointer is released: long enough to carry the last write, short enough
+ * that the agent is back at 500 ms before the eye can tell.
+ *
+ * 松手后留下的租约：够把最后那次写入送过去，又短到肉眼还来不及察觉 agent 已经回到 500ms。
+ */
+const HUD_STICK_TAIL_MS = 150;
+let hudStickPending = null;
+let hudStickTimer = 0;
+let hudStickSentAt = 0;
+/** One failure toast per panel session: a drag would otherwise stack dozens of them · 每次开面板只提示一次失败 */
+let hudStickErrorShown = false;
+/** Handle of the open stick panel, so an interruption can clear its dim flag · 已打开面板的句柄，中断时用来清它的变淡标记 */
+let hudStickHandle = null;
+/** Write sequence: a slow earlier write must not overwrite what a later one already reported · 写入序号：先发后到的旧结果不能覆盖新结果 */
+let hudWriteSeq = 0;
+
+/**
+ * Reflect the current position into the two number boxes on the settings page.
+ *
+ * <p>Only the input value is set: firing `input`/`change` would send the value straight back into a
+ * second write and start a loop. A focused box is left alone — the user is typing in it.
+ *
+ * 把当前位置回写到设置页那两个数字框里。
+ *
+ * <p>只改 input 的 value：发 `input`/`change` 会把值再送进一次写入，形成回环。正在输入（有焦点）的框不动。
+ */
+function syncHudInputs(x, y) {
+  const pairs = [['hudXPercent', x], ['hudYPercent', y]];
+  for (const [key, value] of pairs) {
+    const input = refs.modSettingsBody.querySelector('.srow[data-key="' + key + '"] .num__input');
+    if (input && document.activeElement !== input) {
+      input.value = String(value);
+    }
+  }
+}
+
+/**
+ * Write the position, and tell the agent how long it should keep polling fast.
+ *
+ * <p>Both halves travel in one write on purpose: the agent reads the file once, sees the new numbers
+ * and the lease together, and cannot end up fast-polling yesterday's position.
+ *
+ * 写位置，同时告诉 agent 这个快轮询节奏要维持到什么时候。
+ *
+ * <p>两件事必须一次写出去：agent 只读一次文件，数值和租约一起到手，就不会出现"读得很快但读到的是旧位置"。
+ *
+ * @param {number} leaseUntil epoch ms; 0 = back to the idle cadence · epoch 毫秒；0 = 回到空闲节奏
+ */
+async function writeHudPosition(x, y, leaseUntil) {
+  const seq = ++hudWriteSeq;
+  const target = state.settingsTarget || currentModTarget();
+  syncHudInputs(x, y);
+  if (state.settings && state.settings.mod && state.settings.mod.values) {
+    state.settings.mod.values.hudXPercent = String(x);
+    state.settings.mod.values.hudYPercent = String(y);
+  }
+  try {
+    const result = await bridge.writeModSettings({
+      hudXPercent: x,
+      hudYPercent: y,
+      hudStickUntil: leaseUntil
+    }, target);
+    if (seq !== hudWriteSeq) {
+      return; // a newer write is still in flight, so this answer is stale · 后面还有更新的写入，这次结果作废
+    }
+    if (!result || !result.ok) {
+      if (!hudStickErrorShown) {
+        hudStickErrorShown = true;
+        const reason = (result && result.error) || '';
+        toast(refs.toasts, {
+          level: 'error',
+          text: t('toast.modWriteFailed') + (reason ? ' · ' + reason : '')
+        });
+      }
+      return;
+    }
+    // The writer clamps and rounds, so take its answer as final — the box must show what is on disk
+    // 写入端会夹紧并取整，所以以它回来的值为准——框里要显示磁盘上真正是什么
+    if (result.values) {
+      const diskX = result.values.hudXPercent;
+      const diskY = result.values.hudYPercent;
+      if (state.settings && state.settings.mod && state.settings.mod.values) {
+        state.settings.mod.values.hudXPercent = diskX;
+        state.settings.mod.values.hudYPercent = diskY;
+      }
+      // `values` is a string map; only feed the boxes when both halves parse
+      // `values` 是字符串映射，两半都能解析才回填
+      if (Number.isFinite(Number(diskX)) && Number.isFinite(Number(diskY))) {
+        syncHudInputs(Number(diskX), Number(diskY));
+      }
+    }
+  } catch (error) {
+    if (!hudStickErrorShown) {
+      hudStickErrorShown = true;
+      toast(refs.toasts, {
+        level: 'error',
+        text: t('toast.modWriteFailed') + ' · ' + error.message
+      });
+    }
+  }
+}
+
+/**
+ * Queue a write from the stick, coalescing bursts.
+ *
+ * 摇杆每次变化都走这里，把连发合成一次写入。
+ */
+function queueHudStickWrite(x, y) {
+  hudStickPending = { x, y };
+  if (hudStickTimer) {
+    return;
+  }
+  const wait = Math.max(0, HUD_STICK_INTERVAL - (Date.now() - hudStickSentAt));
+  hudStickTimer = window.setTimeout(() => {
+    hudStickTimer = 0;
+    const next = hudStickPending;
+    hudStickPending = null;
+    if (!next) {
+      return;
+    }
+    hudStickSentAt = Date.now();
+    void writeHudPosition(next.x, next.y, Date.now() + HUD_STICK_LEASE_MS);
+  }, wait);
+}
+
+/**
+ * Tell the agent to poll fast until `until`, without touching the position.
+ *
+ * <p>Sent when the panel opens and when a gesture starts: it costs one small write and buys the agent
+ * the time it needs (up to one idle tick) to be fast *before* the first pixel of movement.
+ *
+ * 只告诉 agent "到这一刻之前快读"，不动位置。
+ *
+ * <p>面板打开和手势开始时发一次：代价是一次很小的写入，换来的是"第一个像素移动之前"agent 已经快了。
+ */
+async function pushHudLease(until) {
+  const target = state.settingsTarget || currentModTarget();
+  try {
+    await bridge.writeModSettings({ hudStickUntil: until }, target);
+  } catch {
+    // A failed lease only costs smoothness; the position writes will report the real problem.
+    // 租约失败最多是这次拖动不顺；真正的问题会由位置写入报出来。
+  }
+}
+
+/**
+ * Announce that a gesture is about to start.
+ *
+ * 宣布一次手势即将开始。
+ */
+function beginHudStick() {
+  void pushHudLease(Date.now() + HUD_STICK_PREWARM_MS);
+}
+
+/**
+ * Pointer released (or a key was pressed): write the final position now and leave only a short lease,
+ * so the agent applies the last value and drops back to 500 ms almost at once.
+ *
+ * 松手（或按了一次方向键）：立刻写入最终位置，只留一个很短的租约，
+ * 让 agent 应用最后的值之后很快回到 500ms。
+ */
+function flushHudStickWrite(x, y) {
+  if (hudStickTimer) {
+    window.clearTimeout(hudStickTimer);
+    hudStickTimer = 0;
+  }
+  hudStickPending = null;
+  hudStickSentAt = Date.now();
+  void writeHudPosition(x, y, Date.now() + HUD_STICK_TAIL_MS);
+}
+
+/**
+ * Panel closing: write the final position and drop the lease outright.
+ *
+ * <p>Even when nothing moved, the lease has to be cleared — otherwise a panel opened and closed
+ * without a drag would leave the agent at 20 Hz until the pre-warm expires.
+ *
+ * 面板关闭：写入最终位置并直接撤销租约。
+ *
+ * <p>即使一次都没拖动也要撤销——否则"打开又关掉"会让 agent 一直跑到预热带到期。
+ */
+function closeHudStick(x, y) {
+  hudStickHandle = null;
+  if (hudStickTimer) {
+    window.clearTimeout(hudStickTimer);
+    hudStickTimer = 0;
+  }
+  hudStickPending = null;
+  hudStickSentAt = Date.now();
+  // The panel already restored the opacity on its way out; this is the belt to its braces. Closing
+  // is the one path where a missed restore would outlive the gesture (the panel is gone, so nothing
+  // else will ever send the stop edge), and `false` is idempotent in the main process.
+  // 面板在退场时已经还原过透明度；这里是第二道保险。关闭是唯一一条"漏了还原就会比手势活得久"
+  // 的路径（面板都没了，再没有别的东西会发结束边沿），而主进程里的 `false` 是幂等的。
+  setWindowDimmed(false);
+  void writeHudPosition(x, y, 0);
+}
+
+/**
+ * Open the stick panel, seeded from the current values.
+ *
+ * 打开摇杆面板，以当前值为起点。
+ */
+function openHudPanel(trigger) {
+  const values = (state.settings && state.settings.mod && state.settings.mod.values) || {};
+  const x = Number(values.hudXPercent);
+  const y = Number(values.hudYPercent);
+  const scale = Number(values.hudScale);
+  hudStickErrorShown = false;
+  hudStickHandle = openHudJoystick({
+    x: Number.isFinite(x) ? x : 1.6,
+    y: Number.isFinite(y) ? y : 2.8,
+    scale: Number.isFinite(scale) ? scale : 1,
+    onStart: beginHudStick,
+    onMove: queueHudStickWrite,
+    onCommit: flushHudStickWrite,
+    onDimChange: setWindowDimmed,
+    onClose: closeHudStick,
+    trigger
+  });
+  // Pre-warm: the agent needs up to one idle tick to notice, and that tick should pass while the
+  // hand is still moving towards the stick.
+  // 预热：agent 最多要一个空闲周期才发现，这个周期应该花在手还没摸到摇杆的时候。
+  beginHudStick();
+}
+
+/**
+ * Drop the whole window to 15% while the stick is being moved, and bring it back on release.
+ *
+ * <p>Why dim at all: the launcher sits on top of the game, so while dragging, the window covers the
+ * HUD that is supposed to be following the stick. At 15% the player can see the HUD move through it.
+ *
+ * <p>The main process owns the value to restore; this only passes the two edges along. It is also
+ * the one place that can swallow a failure: dimming is cosmetic, and losing it must never break the
+ * drag or spam the console if the platform ignores `setOpacity`.
+ *
+ * 拖动摇杆时把整个窗口压到 15%，松手还原。
+ *
+ * <p>为什么要变淡：启动器压在游戏上，拖动期间正好挡住那个本该跟着摇杆走的 HUD。压到 15% 就能
+ * 透过窗口看见 HUD 在动。
+ *
+ * <p>要还原成什么值由主进程管，这里只传两个边沿。失败也只在这里吞掉：变淡是装饰性的，
+ * 丢了不能影响拖动，平台忽略 `setOpacity` 时也不能刷屏。
+ *
+ * @param {boolean} dim
+ */
+function setWindowDimmed(dim) {
+  if (!bridge || typeof bridge.windowOpacity !== 'function') {
+    return;
+  }
+  void bridge.windowOpacity(dim === true).catch(() => {
+    // Cosmetic only: a rejected call means the window keeps its current opacity, which is exactly
+    // the state the feature is supposed to leave behind anyway.
+    // 纯装饰：调用被拒就是窗口保持当前透明度，而"保持原样"本来就是这功能该留下的状态。
+  });
 }
 
 async function relocateModConfig(options = {}) {
@@ -1534,6 +1886,16 @@ function bindChrome() {
     refs.btnMaximize.dataset.i18nAria = key;
     refs.btnMaximize.title = t(key);
     refs.btnMaximize.setAttribute('aria-label', t(key));
+  });
+  // The main process restored the opacity on its own (window minimized/hidden/deactivated
+  // mid-drag). It already did the work; all that is left is to drop the panel's own flag, or the
+  // next drag would think it is still dimmed and never send a fresh start edge.
+  // 主进程自己还原了透明度（拖到一半窗口被最小化/隐藏/失去激活）。活已经干完了，剩下只需清掉
+  // 面板本地的标记，否则下一次拖动会以为自己还在变淡，永远不发新的开始边沿。
+  window.bridge.onWindowOpacityReset(() => {
+    if (hudStickHandle && typeof hudStickHandle.syncUndimmed === 'function') {
+      hudStickHandle.syncUndimmed();
+    }
   });
   refs.btnTheme.addEventListener('click', () => {
     void cycleTheme();

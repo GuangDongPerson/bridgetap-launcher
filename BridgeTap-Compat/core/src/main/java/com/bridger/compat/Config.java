@@ -12,10 +12,65 @@ public final class Config {
    /** mtime+length fingerprint of the file as we last saw it; keeps our own writes from looping. */
    private static volatile long lastStamp;
    private static volatile boolean watching;
+   /**
+    * Idle poll interval, and the fast one used while the launcher's HUD stick is being dragged.
+    *
+    * <p>The fast cadence is what makes the panel follow the pointer: the launcher writes every ~50 ms
+    * while the stick moves, and reading every 500 ms turned that into four visible steps a second.
+    *
+    * 空闲轮询间隔，以及启动器摇杆拖动期间使用的快速间隔。
+    *
+    * <p>快节奏才让面板跟手：拖动时启动器每约 50ms 写一次，而每 500ms 读一次会变成一秒四段的台阶。
+    */
+   private static final long POLL_IDLE_MS = 500L;
+   private static final long POLL_FAST_MS = 50L;
+   /** A lease further out than this is treated as a bug and cut back. · 跳得太远的租约当 bug 处理，压回来 */
+   private static final long MAX_STICK_LEASE_MS = 60_000L;
+   /** Key the launcher writes to say "still dragging, poll fast until this epoch ms". */
+   private static final String STICK_LEASE_KEY = "hudStickUntil";
+   /** Epoch ms until which the watcher polls fast; 0 = idle. Not persisted by {@link #save()}. */
+   private static volatile long stickUntil;
 
    public static boolean enabled = true;
-   public static int hudX = 10;
-   public static int hudY = 10;
+   /**
+    * HUD anchor, in percent of the <b>free travel</b> on the GUI-scaled canvas — not in pixels.
+    *
+    * <p>`0` puts the panel flush against the left/top edge, `100` flush against the right/bottom,
+    * `50` dead centre; the number is measured across the room left over after the panel's own width
+    * or height is taken out. That way every value between 0 and 100 is reachable, the panel never
+    * leaves the canvas, and moving the number by one step moves the panel by one step — no jump at
+    * the midpoint. The same number is the same relative spot at 640×360 and at 1280×720, which
+    * pixels could not do: the same corner of the screen needs different pixel pairs per resolution,
+    * and a windowed client changes size without telling anyone.
+    *
+    * <p>Defaults land close to the old 10 px pair measured on a 640×360 canvas (about 6 px of travel
+    * instead of 10 px of canvas, a few pixels once drawn), so a fresh install looks like it used to.
+    *
+    * HUD 锚点，单位是 GUI 缩放后画布上**可移动余量**的百分比，不是像素。
+    *
+    * <p>`0` 表示面板贴住左/上边，`100` 贴住右/下边，`50` 正中；这个数字量的是扣掉面板自身宽/高之后
+    * 剩下的行程。这样 0–100 之间每个值都到得了，面板永远不出画布，数值走一步面板就走一步——中点不再跳。
+    * 同一个数字在 640×360 与 1280×720 下都是同一个相对位置，这是像素做不到的：同样的屏幕角落，
+    * 不同分辨率需要不同的像素对，而窗口化客户端还会在不通知任何人的情况下改尺寸。
+    *
+    * <p>默认值大致复现旧的 10 px（按 640×360 画布量出来的），差别只有几个像素，所以全新安装看起来和以前一样。
+    */
+   public static double hudXPercent = 1.6D;
+   public static double hudYPercent = 2.8D;
+   /**
+    * The canvas the legacy pixel pair was tuned on: 1920×1080 at GUI scale 3.
+    *
+    * <p>Only used once, to migrate a config written by this build's predecessors or by the original
+    * Fabric mod. Converting at that reference keeps the panel where the player put it instead of
+    * snapping it to a corner.
+    *
+    * 旧像素对当初按哪块画布调的：1920×1080、GUI 缩放 3。
+    *
+    * <p>只在迁移时用一次——迁移这份构建的前身、或原版 Fabric 模组写下的配置。按这个基准换算能让面板
+    * 停在玩家当初放的位置，而不是一下弹到角落。
+    */
+   private static final double LEGACY_CANVAS_WIDTH = 640.0D;
+   private static final double LEGACY_CANVAS_HEIGHT = 360.0D;
    public static double hudScale = 1.0;
    public static String preferredAxis = "AUTO";
    public static boolean backgroundEnabled = true;
@@ -148,6 +203,55 @@ public final class Config {
    private Config() {
    }
 
+   /**
+    * One HUD anchor, migrating the legacy pixel pair on first sight.
+    *
+    * <p>A config written by an older build — or by the original Fabric mod, whose file format this
+    * one matches — carries `hudX=10`. Read as a percentage that would be 10% of the screen (64 px on
+    * a 640-wide canvas), so the very first read converts it against the canvas it was tuned on. From
+    * then on only `hudXPercent` exists and the old key disappears on the next save.
+    *
+    * 一个 HUD 锚点，第一次读到时顺便迁移旧的像素对。
+    *
+    * <p>旧构建——或原版 Fabric 模组（本文件格式与它一致）——写下的配置带 `hudX=10`。把它当百分比读
+    * 就成了屏宽的 10%（640 宽画布上 64 px），所以第一次读取时按当初那块画布换算。此后只有
+    * `hudXPercent`，旧键在下一次保存时消失。
+    *
+    * @param key          new property, {@code hudXPercent}
+    * @param legacyKey    old pixel property, {@code hudX}
+    * @param legacyCanvas the canvas width/height those pixels were measured on
+    * @param fallback     value for a file that has neither
+    */
+   private static double anchorPercent(Properties props, String key, String legacyKey,
+         double legacyCanvas, double fallback) {
+      String raw = props.getProperty(key);
+      if (raw != null) {
+         return clampPercent(parseDouble(raw, fallback));
+      }
+      String legacy = props.getProperty(legacyKey);
+      if (legacy != null) {
+         return clampPercent(parseDouble(legacy, 0.0D) / legacyCanvas * 100.0D);
+      }
+      return fallback;
+   }
+
+   /** Never throws: a malformed property must not stop the config from loading. */
+   private static double parseDouble(String raw, double fallback) {
+      try {
+         return Double.parseDouble(raw.trim());
+      } catch (Throwable t) {
+         return fallback;
+      }
+   }
+
+   /** Keeps an anchor on the canvas; a percentage outside 0–100 has no meaning. */
+   private static double clampPercent(double value) {
+      if (Double.isNaN(value) || Double.isInfinite(value)) {
+         return 0.0D;
+      }
+      return Math.max(0.0D, Math.min(100.0D, value));
+   }
+
    public static synchronized void load() {
       if (!CONFIG_FILE.exists()) {
          save();
@@ -157,8 +261,8 @@ public final class Config {
          Properties props = new Properties();
          props.load(reader);
          enabled = Boolean.parseBoolean(props.getProperty("enabled", "true"));
-         hudX = Integer.parseInt(props.getProperty("hudX", "10"));
-         hudY = Integer.parseInt(props.getProperty("hudY", "10"));
+         hudXPercent = anchorPercent(props, "hudXPercent", "hudX", LEGACY_CANVAS_WIDTH, 1.6D);
+         hudYPercent = anchorPercent(props, "hudYPercent", "hudY", LEGACY_CANVAS_HEIGHT, 2.8D);
          hudScale = Double.parseDouble(props.getProperty("hudScale", "1.0"));
          if (hudScale < 0.5 || hudScale > 2.0) {
             hudScale = 1.0;
@@ -204,6 +308,9 @@ public final class Config {
          if (turnTicks != 12 && turnTicks != 15) {
             turnTicks = 15;
          }
+         // The launcher's fast-poll lease: only meaningful while it keeps being refreshed.
+         // 启动器给的快轮询租约：只有不断被刷新时才有意义。
+         stickUntil = parseStickUntil(props.getProperty(STICK_LEASE_KEY));
          if (legacy) {
             Log.info("config migrated: tickOffset realigned to 0 (coordinate read moved to the take-off tick)");
             save();
@@ -224,8 +331,8 @@ public final class Config {
          try (FileWriter writer = new FileWriter(CONFIG_FILE)) {
             Properties props = new Properties();
             props.setProperty("enabled", String.valueOf(enabled));
-            props.setProperty("hudX", String.valueOf(hudX));
-            props.setProperty("hudY", String.valueOf(hudY));
+            props.setProperty("hudXPercent", String.valueOf(hudXPercent));
+            props.setProperty("hudYPercent", String.valueOf(hudYPercent));
             props.setProperty("hudScale", String.valueOf(hudScale));
             props.setProperty("preferredAxis", preferredAxis);
             props.setProperty("backgroundEnabled", String.valueOf(backgroundEnabled));
@@ -277,6 +384,13 @@ public final class Config {
     * indistinguishable from instant to a human, and file-system events behave differently across
     * the two clients' JVMs and Wine-less Windows setups we support. Called once per process.
     *
+    * <p>While the player drags the HUD stick in the launcher the cadence drops to 50 ms: those
+    * writes land every ~50 ms, and at 500 ms the panel visibly stepped across the screen instead of
+    * following the pointer. The launcher writes {@code hudStickUntil=<epoch ms>} into the same file
+    * for exactly as long as the gesture lasts, so the switch needs no side channel; when the lease
+    * runs out (released, panel closed, or the launcher died mid-drag) the loop drops back to 500 ms
+    * on its next tick without waiting for another file change.
+    *
     * @param onReload run after a successful reload (the agent uses it to push new geometry to the HUD)
     */
    public static void startWatcher(Runnable onReload) {
@@ -286,18 +400,29 @@ public final class Config {
       watching = true;
       lastStamp = stamp();
       Thread thread = new Thread(() -> {
+         long lastLogged = 0L;
          while (true) {
+            long now = System.currentTimeMillis();
+            boolean fast = now < stickUntil;
             try {
-               Thread.sleep(500L);
+               Thread.sleep(fast ? POLL_FAST_MS : POLL_IDLE_MS);
             } catch (InterruptedException e) {
                return;
             }
-            long now = stamp();
-            if (now == 0L || now == lastStamp) {
+            long current = stamp();
+            if (current == 0L || current == lastStamp) {
                continue;
             }
             load();
-            Log.info("config reloaded from disk: " + path());
+            // At 20 reloads a second this line alone would fill the log; one line a second keeps the
+            // trail readable and still shows that a drag happened.
+            // 一秒 20 次重载时，这一行本身就能把日志刷满；限到一秒一条，既看得懂又留得下"拖过"的痕迹。
+            long after = System.currentTimeMillis();
+            if (after - lastLogged >= 1000L) {
+               lastLogged = after;
+               Log.info("config reloaded from disk" + (fast ? " (stick: " + POLL_FAST_MS + " ms)" : "")
+                  + ": " + path());
+            }
             if (onReload != null) {
                try {
                   onReload.run();
@@ -310,6 +435,41 @@ public final class Config {
       thread.setDaemon(true);
       thread.start();
       Log.info("config watch: " + path());
+   }
+
+   /**
+    * True while the launcher's HUD stick is being dragged (its lease has not run out).
+    *
+    * 启动器摇杆正在拖动期间为 true（租约未到期）。
+    */
+   public static boolean stickActive() {
+      return System.currentTimeMillis() < stickUntil;
+   }
+
+   /**
+    * Reads the launcher's fast-poll lease.
+    *
+    * <p>Anything absurd is cut down: a far-future value (clock skew, a hand-edited file) would keep
+    * the watcher at 20 Hz for the rest of the session, so the lease is capped at a minute from now.
+    *
+    * 读启动器给的快轮询租约。
+    *
+    * <p>离谱值一律压住：一个远在未来的值（时钟偏差、手改过的文件）会让监听线程整个会话都跑在 20Hz，
+    * 所以租约最多只认到当前时间之后一分钟。
+    */
+   private static long parseStickUntil(String raw) {
+      if (raw == null) {
+         return 0L;
+      }
+      try {
+         long value = Long.parseLong(raw.trim());
+         if (value <= 0L) {
+            return 0L;
+         }
+         return Math.min(value, System.currentTimeMillis() + MAX_STICK_LEASE_MS);
+      } catch (NumberFormatException e) {
+         return 0L;
+      }
    }
 
    private static int parseOffset(String raw, int fallback) {
